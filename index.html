@@ -6,29 +6,30 @@
     <meta name="theme-color" content="#000000" />
     <meta
       name="description"
-      content="Xiaohan Zou's portfolio in macOS style."
+      content="ZhongFarwell's portfolio in macOS style."
     />
 
-    <link rel="icon" href="/logo/favicon.svg" />
-    <link rel="apple-touch-icon" href="/logo/logo192.png" />
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
     -->
     <link rel="manifest" href="/manifest.json" />
 
-    <title>Xiaohan Zou's Portfolio</title>
+    <title>ZhongFarwell's Portfolio</title>
   </head>
   <body>
     <div id="root"></div>
+    <!-- 运行时配置：必须在入口脚本前加载，设置 window.alignConfig -->
+    <script src="/CONFIG.js"></script>
     <script type="module" src="/src/index.tsx"></script>
 
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-DSL4Z03NFE"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-7W057HJZBD"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){ dataLayer.push(arguments); }
       gtag("js", new Date());
-      gtag("config", "G-DSL4Z03NFE");
+      gtag("config", "G-7W057HJZBD");
     </script>
   </body>
 </html>

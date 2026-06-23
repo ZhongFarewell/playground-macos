@@ -118,6 +118,22 @@ const Window = (props: WindowProps) => {
     // "- minMarginY" because of the boundary for windows
     y: (winHeight - initHeight - dockSize - minMarginY) / 2 + (props.y || 0)
   });
+  // 拖拽/resize 时提升合成层 + 关闭 transition，避免跟手延迟。
+  // 全屏切换时 transition 常驻，size/position 平滑过渡（缩放动画）。
+  const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  // 全屏切换过渡期间隐藏内容，避免网格重排抖动影响观感
+  const [maximizing, setMaximizing] = useState(false);
+  const prevMax = useRef(props.max);
+
+  useEffect(() => {
+    if (prevMax.current !== props.max) {
+      prevMax.current = props.max;
+      setMaximizing(true);
+      const t = setTimeout(() => setMaximizing(false), 150);
+      return () => clearTimeout(t);
+    }
+  }, [props.max]);
 
   useEffect(() => {
     setState({
@@ -167,9 +183,12 @@ const Window = (props: WindowProps) => {
               Math.max(0, state.y)
             )
       }}
+      onDragStart={() => setDragging(true)}
       onDragStop={(e, d) => {
         setState({ ...state, x: d.x, y: d.y });
+        setDragging(false);
       }}
+      onResizeStart={() => setResizing(true)}
       onResizeStop={(e, direction, ref, delta, position) => {
         setState({
           ...state,
@@ -177,6 +196,7 @@ const Window = (props: WindowProps) => {
           height: parseInt(ref.style.height),
           ...position
         });
+        setResizing(false);
       }}
       minWidth={props.minWidth ? props.minWidth : 200}
       minHeight={props.minHeight ? props.minHeight : 150}
@@ -185,7 +205,14 @@ const Window = (props: WindowProps) => {
       enableResizing={!props.max}
       lockAspectRatio={props.aspectRatio}
       lockAspectRatioExtraHeight={props.aspectRatio ? appBarHeight : undefined}
-      style={{ zIndex: props.z }}
+      style={{
+        zIndex: props.z,
+        willChange: dragging ? "transform" : "auto",
+        transition:
+          dragging || resizing
+            ? "none"
+            : "width 150ms ease-out, height 150ms ease-out, transform 150ms ease-out"
+      }}
       onMouseDown={() => props.focus(props.id)}
       className={`overflow-hidden ${round} ${border} shadow-lg shadow-black/30 ${minimized}`}
       id={`window-${props.id}`}
@@ -204,7 +231,17 @@ const Window = (props: WindowProps) => {
         />
         <span className="font-semibold text-c-700">{props.title}</span>
       </div>
-      <div className="innner-window w-full overflow-y-hidden">{children}</div>
+      <div
+        className="innner-window w-full overflow-y-hidden"
+        style={{
+          opacity: maximizing ? 1 : 1,
+          // 淡出瞬间（无 transition），淡入平滑（带 transition），
+          // 避免全屏切换时看到网格重排抖动
+          transition: maximizing ? "none" : "opacity 120ms ease-out"
+        }}
+      >
+        {children}
+      </div>
     </Rnd>
   );
 };

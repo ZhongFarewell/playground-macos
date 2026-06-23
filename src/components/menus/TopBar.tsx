@@ -1,8 +1,9 @@
 import React from "react";
 import { format } from "date-fns";
 import { isFullScreen } from "~/utils";
-import { music } from "~/configs";
+import { music, user } from "~/configs";
 import type { MacActions } from "~/types";
+import { logoutAlign } from "~/services";
 
 interface TopBarItemProps {
   hideOnMobile?: boolean;
@@ -140,9 +141,12 @@ const TopBar = (props: TopBarProps) => {
     });
   };
 
+  // 注销：调后端清 align_id cookie（httpOnly，前端无法直接清），再回登录页
   const logout = (): void => {
     controls.pause();
-    props.setLogin(false);
+    logoutAlign()
+      .catch(() => {})
+      .finally(() => props.setLogin(false));
   };
 
   const shut = (e: React.MouseEvent<HTMLLIElement>): void => {
@@ -194,6 +198,7 @@ const TopBar = (props: TopBarProps) => {
           sleep={sleep}
           toggleAppleMenu={toggleAppleMenu}
           btnRef={appleBtnRef}
+          userName={user.name}
         />
       )}
 

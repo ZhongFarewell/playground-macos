@@ -1,30 +1,136 @@
 import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { wallpapers, user } from "~/configs";
 import type { MacActions } from "~/types";
+import { authAlign, loginAlign } from "~/services";
+import { encrypt } from "~/services/encrypt";
+import type { UserInfo } from "~/stores/slices/user";
+
+type SignState =
+  | { type: "idle"; text: string }
+  | { type: "loading"; text: string }
+  | { type: "error"; text: string };
 
 export default function Login(props: MacActions) {
   const [password, setPassword] = useState("");
-  const [sign, setSign] = useState("Click to enter");
+  const [sign, setSign] = useState<SignState>({
+    type: "idle",
+    text: "Enter Password"
+  });
+  // 每次进入错误态自增，强制重新触发 shake 动画（同态连续错误也能抖）
+  const [shakeKey, setShakeKey] = useState(0);
+  // 长按密码框显示明文（参照 macOS 钥匙串弹窗的 press-and-hold 显隐交互）
+  const [showPassword, setShowPassword] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const dark = useStore((state) => state.dark);
+  const setUserInfo = useStore((state) => state.setUserInfo);
+
+  const loading = sign.type === "loading";
+
+  const triggerError = (text: string) => {
+    setSign({ type: "error", text });
+    setShakeKey((k) => k + 1);
+  };
+
+  // 挂载时先尝试 /auth 免登：align_id cookie 有效则直接进桌面
+  // 长按密码框显示明文（参照 macOS 钥匙串弹窗的 press-and-hold 显隐交互）
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPeek = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setShowPassword(true), 400);
+  };
+  const endPeek = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    setShowPassword(false);
+  };
+  useEffect(() => () => endPeek(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    authAlign()
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.data && typeof res.data === "object") {
+          setUserInfo(res.data as UserInfo);
+          props.setLogin(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const keyPress = (e: React.KeyboardEvent) => {
-    const keyCode = e.key;
-    if (keyCode === "Enter") loginHandle();
+    if (e.key === "Enter") loginHandle();
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setPassword(e.target.value);
+    // 输入时如果还在错误态，恢复到 idle
+    if (sign.type === "error") {
+      setSign({ type: "idle", text: "Enter Password" });
+    }
   };
 
   const loginHandle = () => {
-    if (user.password === "" || user.password === password) {
-      // not set password or password correct
-      props.setLogin(true);
-    } else if (password !== "") {
-      // password not null and incorrect
-      setSign("Incorrect password");
+    if (loading) return;
+    if (!password) {
+      triggerError("Enter Password");
+      return;
+    }
+
+    setSign({ type: "loading", text: "Logging in..." });
+
+    const data = new FormData();
+    data.append("user", encrypt({ username: user.username, password }));
+
+    loginAlign(data)
+      .then((res) => {
+        if (res?.data && typeof res.data === "object") {
+          setUserInfo(res.data as UserInfo);
+          props.setLogin(true);
+        } else {
+          triggerError("Incorrect password");
+          setPassword("");
+        }
+      })
+      .catch(() => {
+        triggerError("Incorrect password");
+        setPassword("");
+      });
+  };
+
+  // 免登检查完成前不显示登录表单，避免闪烁
+  if (!authChecked) {
+    return (
+      <div
+        className="size-full login text-center"
+        style={{
+          background: `url(${
+            dark ? wallpapers.night : wallpapers.day
+          }) center/cover no-repeat`
+        }}
+      />
+    );
+  }
+
+  // macOS 登录页错误抖动：整体左右晃几次后回正
+  const shakeVariants = {
+    shake: {
+      x: [0, -8, 8, -6, 6, -3, 3, 0],
+      transition: { duration: 0.5, ease: "easeInOut" }
     }
   };
+
+  // 提示文字颜色：错误态偏红，其余白色半透明
+  const signColor = sign.type === "error" ? "text-red-400" : "text-white/70";
 
   return (
     <div
@@ -34,33 +140,99 @@ export default function Login(props: MacActions) {
           dark ? wallpapers.night : wallpapers.day
         }) center/cover no-repeat`
       }}
-      onClick={() => loginHandle()}
     >
-      <div className="inline-block w-auto relative top-1/2 -mt-40">
+      <motion.div
+        key={shakeKey}
+        className="inline-block w-auto relative top-1/2 -mt-40"
+        initial={false}
+        animate={sign.type === "error" ? "shake" : false}
+        variants={shakeVariants}
+      >
         {/* Avatar */}
         <img className="rounded-full size-24 my-0 mx-auto" src={user.avatar} alt="img" />
         <div className="font-semibold mt-2 text-xl text-white">{user.name}</div>
 
         {/* Password Input */}
-        <div className="mx-auto grid grid-cols-5 w-44 h-8 mt-4 rounded-md backdrop-blur-2xl bg-gray-300/50">
+        <div
+          className={`mx-auto grid grid-cols-5 w-44 h-8 mt-4 rounded-md backdrop-blur-2xl bg-gray-300/50 overflow-hidden transition-shadow ${
+            showPassword
+              ? "ring-2 ring-blue-400/60 shadow-[0_0_8px_rgba(96,165,250,0.4)]"
+              : ""
+          }`}
+        >
           <input
-            className="text-sm text-white col-start-1 col-span-4 no-outline bg-transparent px-2"
-            type="password"
+            className="text-sm text-white col-start-1 col-span-4 no-outline bg-transparent px-2 disabled:opacity-60 select-none"
+            type={showPassword ? "text" : "password"}
             placeholder="Enter Password"
-            onClick={(e) => e.stopPropagation()}
+            disabled={loading}
+            autoFocus
             onKeyDown={keyPress}
             value={password}
             onChange={handleInputChange}
+            // 长按 400ms 显示明文，松开恢复（macOS 钥匙串式 press-and-hold）
+            onMouseDown={startPeek}
+            onMouseUp={endPeek}
+            onMouseLeave={endPeek}
+            onTouchStart={startPeek}
+            onTouchEnd={endPeek}
           />
           <div className="col-start-5 col-span-1 flex-center">
-            <span className="i-bi:question-square-fill text-white ml-1" />
+            <AnimatePresence mode="wait" initial={false}>
+              {loading ? (
+                <motion.span
+                  key="spinner"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{
+                    opacity: 1,
+                    scale: 1,
+                    rotate: 360
+                  }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{
+                    opacity: { duration: 0.15 },
+                    scale: { duration: 0.15 },
+                    rotate: {
+                      duration: 0.8,
+                      ease: "linear",
+                      repeat: Infinity
+                    }
+                  }}
+                  className="i-bi:arrow-right-circle text-white text-lg"
+                />
+              ) : (
+                <motion.button
+                  key="arrow"
+                  type="button"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                  className="text-white hover:opacity-80"
+                  onClick={loginHandle}
+                >
+                  <span className="i-bi:arrow-right-circle-fill text-lg" />
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
-        <div mt-2 cursor-pointer text="sm gray-200">
-          {sign}
+        {/* 提示文字：淡入淡出切换 */}
+        <div className="mt-2 h-5 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={sign.text + sign.type}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className={`text-sm ${signColor}`}
+            >
+              {sign.text}
+            </motion.div>
+          </AnimatePresence>
         </div>
-      </div>
+      </motion.div>
 
       {/* buttons */}
       <div className="text-sm fixed bottom-16 inset-x-0 mx-auto flex flex-row space-x-4 w-max">

@@ -7,6 +7,8 @@ interface AppleMenuProps {
   sleep: (e: React.MouseEvent<HTMLLIElement>) => void;
   toggleAppleMenu: () => void;
   btnRef: React.RefObject<HTMLDivElement>;
+  /** 当前用户显示名，用于 "Log Out {name}..." 文案 */
+  userName: string;
 }
 
 export default function AppleMenu({
@@ -15,7 +17,8 @@ export default function AppleMenu({
   restart,
   sleep,
   toggleAppleMenu,
-  btnRef
+  btnRef,
+  userName
 }: AppleMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -42,8 +45,9 @@ export default function AppleMenu({
         <MenuItem onClick={shut}>Shut Down...</MenuItem>
       </MenuItemGroup>
       <MenuItemGroup border={false}>
+        {/* 锁屏与注销都清 cookie：刷新后 /auth 失败必然回登录页，无绕过问题 */}
         <MenuItem onClick={logout}>Lock Screen</MenuItem>
-        <MenuItem onClick={logout}>Log Out Xiaohan Zou...</MenuItem>
+        <MenuItem onClick={logout}>{`Log Out ${userName}`}</MenuItem>
       </MenuItemGroup>
     </div>
   );

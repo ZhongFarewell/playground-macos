@@ -3,51 +3,7 @@ import type { WebsitesData } from "~/types";
 const websites: WebsitesData = {
   favorites: {
     title: "SNS Links",
-    sites: [
-      {
-        id: "my-blog",
-        title: "Website",
-        img: "https://zxh.me/img/avatar.jpg",
-        link: "https://zxh.me/",
-        inner: true
-      },
-      {
-        id: "my-github",
-        title: "Github",
-        img: "img/sites/github.svg",
-        link: "https://github.com/Renovamen"
-      },
-      {
-        id: "my-linkedin",
-        title: "Linkedin",
-        img: "img/sites/linkedin.svg",
-        link: "https://www.linkedin.com/in/xiaohan-zou"
-      },
-      {
-        id: "my-google-scholar",
-        title: "Scholar",
-        img: "img/sites/google-scholar.svg",
-        link: "https://scholar.google.com/citations?user=RuW6xgMAAAAJ"
-      },
-      {
-        id: "my-zhihu",
-        title: "知乎",
-        img: "img/sites/zhihu.jpeg",
-        link: "https://www.zhihu.com/people/chao-neng-gui-su"
-      },
-      {
-        id: "my-twitter",
-        title: "Twitter",
-        img: "img/sites/twitter.svg",
-        link: "https://www.twitter.com/renovamen_zxh"
-      },
-      {
-        id: "my-email",
-        title: "Email",
-        img: "img/sites/gmail.svg",
-        link: "mailto:renovamenzxh@gmail.com"
-      }
-    ]
+    sites: []
   },
   freq: {
     title: "Frequently Visited",

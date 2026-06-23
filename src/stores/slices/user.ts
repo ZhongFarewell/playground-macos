@@ -8,6 +8,21 @@ export interface UserSlice {
   };
   addFaceTimeImage: (v: string) => void;
   delFaceTimeImage: (k: string) => void;
+  /** 登录态：后端 /auth 或 /login 返回的用户信息（成功登录后才写入） */
+  userInfo: UserInfo | null;
+  setUserInfo: (v: UserInfo | null) => void;
+}
+
+/** 后端 formUserInfo 返回的字段子集（见 Align-server helper.ts:149） */
+export interface UserInfo {
+  username: string;
+  avatar?: string;
+  autograph?: string;
+  gender?: string;
+  wechat?: string;
+  QQ?: string;
+  intr?: string;
+  root?: boolean;
 }
 
 export const createUserSlice: StateCreator<UserSlice> = (set) => ({
@@ -25,5 +40,7 @@ export const createUserSlice: StateCreator<UserSlice> = (set) => ({
       const images = state.faceTimeImages;
       delete images[k];
       return { faceTimeImages: images };
-    })
+    }),
+  userInfo: null,
+  setUserInfo: (v) => set(() => ({ userInfo: v }))
 });

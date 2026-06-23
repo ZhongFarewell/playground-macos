@@ -14,7 +14,6 @@ const apps: AppsData[] = [
     desktop: true,
     width: 860,
     height: 500,
-    show: true,
     y: -40,
     img: "img/icons/bear.png",
     content: <Bear />
@@ -66,6 +65,19 @@ const apps: AppsData[] = [
     content: <FaceTime />
   },
   {
+    id: "photos",
+    title: "Photos",
+    desktop: true,
+    img: "img/icons/photos.png",
+    width: 880,
+    height: 560,
+    minWidth: 480,
+    minHeight: 320,
+    x: 60,
+    y: -30,
+    content: <Photos />
+  },
+  {
     id: "terminal",
     title: "Terminal",
     desktop: true,
@@ -77,7 +89,7 @@ const apps: AppsData[] = [
     title: "Github",
     desktop: false,
     img: "img/icons/github.png",
-    link: "https://github.com/Renovamen/playground-macos"
+    link: "https://github.com/ZhongFarewell/playground-macos"
   }
 ];
 

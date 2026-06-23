@@ -1,0 +1,156 @@
+# CODEBUDDY.md
+
+This file provides guidance to CodeBuddy Code when working with code in this repository.
+
+## Project Overview
+
+A portfolio website that simulates the macOS GUI (Boot → Login → Desktop flow). Built with React 18 + TypeScript + Vite + UnoCSS + Zustand. Deployed to GitHub Pages at `portfolio.zxh.me` via the `build-and-deploy` workflow (pushes to `main` build and deploy).
+
+**Current status:** Originally a pure static frontend, now integrating with the Align-server backend (`D:\AlignSpace\code\Align-server`, port 2120, prod `https://zhongfw.online`). Login, session, and Photos app consume backend APIs; other apps remain static. Runtime config (`window.alignConfig`) in `public/CONFIG.js` controls API/MinIO prefixes — `public/` is not processed by Vite, so `CONFIG.js` uses hardcoded values (not `process.env`).
+
+**macOS fidelity rule (mandatory):** All UI/interaction must strictly follow real macOS behavior. Before implementing any UI/interaction change or new feature, you **must**:
+1. Look up how the corresponding macOS app (Preview, Quick Look, Finder, Photos, etc.) handles that exact situation.
+2. Explain the macOS behavior to the user in text.
+3. Wait for the user to approve before writing any code.
+
+Do not skip this explanation-then-approval step, even if you think your proposed approach is reasonable. If a requirement diverges from macOS, flag it before implementing. See `feedback_macos_style.md` and `feedback_requirement_macos_check.md` in the project memory for details.
+
+## Commands
+
+```bash
+pnpm install        # install deps (lockfile is frozen in CI)
+pnpm dev            # start Vite dev server with --host
+pnpm build          # production build to dist/
+pnpm serve          # preview the production build
+pnpm lint           # run ESLint on the project
+```
+
+There is no test suite configured. Linting also runs via `lint-staged` on the `pre-commit` hook (`.husky/pre-commit` → `pnpm lint-staged`), which runs `eslint --fix` on staged `*.{js,ts,tsx}` and sorts `package.json`.
+
+## Architecture
+
+### App lifecycle (`src/index.tsx`)
+
+Root `App` component toggles between three full-screen pages based on local state (`booting`, `login`): `Boot` → `Login` → `Desktop`. Power actions (`shutMac`, `restartMac`, `sleepMac`) are defined at the top and threaded down to `Login`/`Desktop` as `MacActions` (see `src/types/index.d.ts`). `Boot` controls the boot/sleep/wake/restart progress animation and clears `booting` to hand off to the next page.
+
+### State management (Zustand, sliced)
+
+`src/stores/index.ts` composes a single `useStore` from three slice creators in `src/stores/slices/`:
+- `system.ts` — `dark`, `volume`, `brightness`, `wifi`, `bluetooth`, `airdrop`, `fullscreen` + their toggles. `toggleDark` mutates `document.documentElement.classList` directly to flip UnoCSS dark mode.
+- `dock.ts` — `dockSize`, `dockMag` (dock magnification).
+- `user.ts` — `typoraMd` content + `faceTimeImages` capture map + `userInfo`/`setUserInfo` (login state: backend `/auth` or `/login` response, see `UserInfo` interface in the slice file).
+
+Each slice is a `StateCreator<Slice>`; new slices should follow the same `createXxxSlice` + `XxxSlice` interface pattern and be spread into `useStore`.
+
+### API layer (`src/services/`)
+
+**Not auto-imported** (only `src/hooks`, `src/stores`, `src/components/**` are). Must use explicit imports: `import { loginAlign, authAlign, logoutAlign, getPhotoList, photoUrl } from "~/services"`.
+
+- `index.ts` — Axios instance with `withCredentials: true` (backend uses httpOnly `align_id` cookie for session). `baseURL` reads `window.alignConfig.apiPrefix + "/api"`. Exports `loginAlign` (POST `/login`, FormData with AES-encrypted `user` field), `authAlign` (GET `/auth` cookie session check), `logoutAlign` (GET `/logout` clears cookie), `getPhotoList` (GET `/resources/memory/image`), `photoUrl(filename)` (builds MinIO URL: `blogSourceMinio + "/memoryimage/" + filename`).
+- `encrypt.ts` — AES-CBC encryption (key/iv = `2120131404240929`), aligned with dashboard `src/util/index.ts` and backend `helper.encodeUser`. Used to encrypt `{ username, password }` for login.
+
+**Runtime config (`public/CONFIG.js`):** Sets `window.alignConfig = { apiPrefix, sourceHost, blogSourceMinio }`. `public/` is not processed by Vite — do not use `process.env.*` here (browser has no `process`). Dev uses Vite proxy (`/api` → Align-server, `/align-minio` → zhongfw.online); prod hardcodes values. Type declaration in `src/vite-env.d.ts` (`declare global { interface Window { alignConfig?: AlignConfig } }`).
+
+### Login & session (`src/pages/Login.tsx`)
+
+Login flow (replaces the original static password mock):
+1. On mount, calls `authAlign()` — if `align_id` cookie is valid, backend returns user object → `setUserInfo` + `setLogin(true)` (auto-login, no password needed).
+2. If session invalid, stays on login page. Username comes from `src/configs/user.ts` `user.username` (single fixed admin account, matching backend `Users` table). Login page only shows a password input — username is read from config.
+3. On password submit: encrypts `{ username: user.username, password }` → FormData `user` field → `loginAlign()`. Success → `setUserInfo` + `setLogin(true)`; failure → shake animation + "Incorrect password".
+4. Loading state: arrow button becomes a rotating spinner. Error state: whole input area shakes horizontally (framer-motion), text turns red.
+5. Long-press (400ms) the password input to peek at plaintext (macOS Keychain-style press-and-hold), with a blue ring indicator.
+
+**AppleMenu logout** (`src/components/menus/AppleMenu.tsx`): Both "Lock Screen" and "Log Out..." call `logout` in TopBar, which calls `logoutAlign()` to clear the `align_id` cookie, then `setLogin(false)`. This ensures a page refresh after lock/logout won't bypass the login (cookie is gone, `/auth` fails). The "Log Out {name}..." text is dynamic, reading `user.name` from config.
+
+### Auto-imports (critical)
+
+`vite.config.ts` uses `unplugin-auto-import` with `dirs: ["src/hooks", "src/stores", "src/components/**"]`. This means **hooks, the store, and all components are available globally without import**. The generated `src/auto-imports.d.ts` lists what's auto-imported (e.g. `useState`, `useStore`, `useWindowSize`, `AppWindow`, `Bear`, `TopBar`, etc.).
+
+- Do **not** add explicit imports for these symbols — they are already global. Adding them can cause duplicate-declaration errors.
+- React APIs (`useState`, `useEffect`, `useRef`, …) are also auto-imported; no `import React` is needed for hooks (though some files still `import React` for types/JSX namespace — keep that where used).
+- When you add a new component/hook/store, run `pnpm dev` (or just save a file) so the plugin regenerates `src/auto-imports.d.ts`. Treat that file as generated — do not hand-edit.
+
+### Path alias
+
+`~/*` → `src/*` (configured in both `vite.config.ts` and `tsconfig.json`). Prefer `~/...` for intra-project imports.
+
+### Apps & the desktop window system
+
+`src/configs/apps.tsx` is the app registry: an array of `AppsData` (`src/types/configs/apps.d.ts`) describing each dock app — `id`, `title`, `img`, optional `desktop` (whether it opens in a window), `width/height/minWidth/minHeight/aspectRatio`, initial `x/y` offset, and `content` (the JSX element rendered inside the window). Apps with `desktop: false` either open Launchpad (`id: "launchpad"`) or external links (`link` field).
+
+`src/pages/Desktop.tsx` owns all per-window runtime state (`showApps`, `appsZ` z-index stack, `maxApps`, `minApps`, `maxZ`) in a single `useState` object. Key behaviors:
+- `openApp(id)` — shows the app, bumps its z-index above `maxZ`, restores position if it was minimized.
+- `minimizeApp(id)` — reads the dock icon's rect and translates the window down to the dock via CSS transform, then marks it minimized. Relies on `#window-{id}` and `#dock-{id}` element IDs and the `--window-transform-x/y` CSS vars set in `setWindowPosition`.
+- `closeApp`, `setAppMax` (also toggles `hideDockAndTopbar` for fullscreen), `setAppMin`.
+
+`src/components/AppWindow.tsx` wraps `react-rnd` (`Rnd`) to make windows draggable/resizable. The window's title bar (`.window-bar`) is the drag handle. Maximize disables drag/resize and stretches to the viewport minus the top-bar margin. Windows with `aspectRatio` set (e.g. FaceTime) disable the maximize button. `AppWindow` injects `width` into its child via `React.cloneElement` — child app components should accept a `width` prop when they need it.
+
+There is an intentional "boundary for windows" trick: windows are positioned with an extra `winWidth` offset and `minMarginY` (top bar height, `src/utils/constants.ts`) so `Rnd`'s `bounds="parent"` keeps them inside the visible area. Pay attention to comments referencing "because of the boundary for windows" before changing any position math.
+
+### Desktop chrome
+
+- `src/components/menus/TopBar.tsx` — top menu bar (current app title, clock, control center, spotlight trigger, battery/wifi menus).
+- `src/components/dock/Dock.tsx` + `DockItem.tsx` — bottom dock with framer-motion magnification driven by a `useMotionValue` for mouse X.
+- `src/components/Spotlight.tsx` — Spotlight search (`Cmd/Space`-style) to open apps / toggle Launchpad.
+- `src/components/Launchpad.tsx` — full-screen app grid (config in `src/configs/launchpad.ts`).
+- `src/components/menus/` — `AppleMenu`, `ControlCenterMenu`, `WifiMenu`, `Battery`, plus `base.tsx` exporting `MenuItem` / `MenuItemGroup` primitives for dropdown menus.
+
+### Built-in apps (`src/components/apps/`)
+
+`Bear`, `Typora` (Milkdown WYSIWYG markdown editor), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
+
+**Photos app** (`src/components/apps/Photos.tsx`): Simulates macOS Photos. Fetches all photo metadata in one request (`pageSize: 9999`), renders a grid with `content-visibility: auto` + `loading="lazy"` + `decoding="async"` (not a virtual list — DOM nodes stay mounted so images don't reload on scroll). Grid columns use `repeat(auto-fill, minmax(120px, 1fr))` so thumbnail size stays constant while column count adapts to window width (matches macOS Photos behavior — maximizing adds columns, not enlarges thumbnails). Features: skeleton screen during load, error state with "Try Again" retry button, empty state, full-screen image viewer with ← → navigation, ESC close, bottom counter. App icon `public/img/icons/photos.png` must be supplied manually (downloaded from macOS Icon Gallery or similar).
+
+### Hooks (`src/hooks/`)
+
+`useWindowSize`, `useClickOutside`, `useInterval`, `useAudio`, `useBattery` (Battery Status API; falls back to 100% on unsupported browsers), `useContextMenu` (element-level context menu declaration, see "Context menu system" below). All auto-imported globally.
+
+### Context menu system (plugin-friendly, element-level)
+
+Replaces the browser's native context menu with a macOS-style one. Designed for future plugin architecture: apps (which may be independently bundled but run in-process) declare their own menu items via a fixed protocol interface.
+
+**Protocol interface** (`src/types/contextMenu.d.ts`):
+- `MenuItemDef` — `{ key?, label?, shortcut?, onClick?, disabled?, separator?, children? }` (children reserved for submenus).
+- `MenuCollector` — `{ add(...items), addSeparator() }`, passed to collection callbacks.
+- `ContextMenuContext` — `{ event, x, y, selection, target }`, gives elements context to decide what menu items to return.
+
+**Collection mechanism** (`src/components/ContextMenu.tsx`): On `contextmenu` event, the component dispatches a custom `contextmenu-collect` event (bubbles up the DOM). Elements on the bubble path listen for this event and call `collector.add(...)` to declare their menu items. If nothing is collected, falls back to a default menu (Cut/Copy/Paste/Look Up/Search/Select All — macOS universal menu). Renders at mouse position with edge-flipping, closes on click-outside/ESC/scroll. Always mounted in `App` (all three routes: Boot/Login/Desktop).
+
+**Element declaration** (`src/hooks/useContextMenu.ts`): The `useContextMenu(collect, deps)` hook returns a ref. Attach the ref to any element; right-clicking it will invoke `collect(ctx, collector)` where you call `collector.add(...)`. Auto-imported globally.
+
+```tsx
+const photoRef = useContextMenu((ctx, collector) => {
+  collector.add(
+    { label: "Set as Wallpaper", onClick: () => setWallpaper(src) },
+    { separator: true },
+    { label: "Copy Image Address", onClick: () => copy(url) }
+  );
+});
+return <img ref={photoRef as any} src={url} />;
+```
+
+**Design rationale:** macOS context menus are context-sensitive (right-clicking a photo vs. text vs. desktop shows different items). The collect-event-bubble pattern lets each element self-declare its menu items without a central registry — matching macOS behavior. If an element doesn't declare anything, the bubble continues to parents, and ultimately the default menu shows. This aligns with the future plugin architecture: an independently bundled app just needs to comply with the `MenuItemDef` protocol and listen for `contextmenu-collect` events.
+
+### Styling — UnoCSS (`unocss.config.ts`)
+
+Uses `presetUno`, `presetAttributify` (attribute-based classes like `<div text="sm gray-200" />`), `presetIcons` (`i-{set}:{icon}` classes render inline SVGs — e.g. `i-gg:close`, `i-ri:restart-line`), and three transformers (directives, variant groups, attributify-jsx).
+
+Notable custom shortcuts: `flex-center`, `hstack`, `vstack`, `no-outline`, `window-btn`, `menu-box`, `cc-grid` (control-center tile), `cc-btn`, `battery-level`.
+
+Theme-aware color shortcuts `text-c-*`, `bg-c-*`, `border-c-*` auto-generate a `dark:` variant — `colorAttr` in the config maps a light gray shade to its dark-mode counterpart (see the `colorReg`/`colorAttr` helpers). Use these `*-c-*` shortcuts for any color that needs to respond to dark mode, rather than writing explicit `dark:` variants.
+
+Dark mode is toggled by adding/removing the `dark` class on `<html>` (done in `system.ts` `toggleDark`), so UnoCSS `dark:` variants work out of the box.
+
+### TypeScript
+
+Strict mode, `moduleResolution: "Node"`, `jsx: "react-jsx"`, `noEmit: true` (Vite handles emit). Path alias `~/*` → `src/*`. ESLint config (`eslint.config.js`) turns off `no-explicit-any`, `no-unused-vars`, `ban-types`, and `react/jsx-no-undef` — `any` is allowed.
+
+## Conventions
+
+- 2-space indent, LF line endings, UTF-8, trim trailing whitespace, final newline (`.editorconfig`).
+- Functional components + hooks only (the README notes a class-component predecessor on the `class-component` branch — do not reintroduce class components).
+- Add new apps via: an entry in `src/configs/apps.tsx` (and `src/configs/launchpad.ts` if it should appear in Launchpad), a component in `src/components/apps/`, and any related config in `src/configs/` + types in `src/types/configs/`. The component will be auto-imported — no manual import in `apps.tsx` needed.
+- `src/services/` is **not** auto-imported — always use explicit `import { ... } from "~/services"`.
+- `public/CONFIG.js` is not processed by Vite — use hardcoded values, not `process.env.*`.
+- `src/configs/user.ts` now has a `username` field (backend `Users.username` for login). The `password` field is deprecated (was for the old static mock login). `name` is the display name shown on the login page and AppleMenu's "Log Out {name}...".
+- Commit hooks run `lint-staged`; make sure `pnpm lint` passes before committing.

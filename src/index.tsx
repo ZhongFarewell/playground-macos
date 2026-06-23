@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import Desktop from "~/pages/Desktop";
 import Login from "~/pages/Login";
 import Boot from "~/pages/Boot";
+import ContextMenu from "~/components/ContextMenu";
 
 import "@unocss/reset/tailwind.css";
 import "uno.css";
@@ -41,24 +42,35 @@ export default function App() {
   };
 
   if (booting) {
-    return <Boot restart={restart} sleep={sleep} setBooting={setBooting} />;
+    return (
+      <>
+        <Boot restart={restart} sleep={sleep} setBooting={setBooting} />
+        <ContextMenu />
+      </>
+    );
   } else if (login) {
     return (
-      <Desktop
-        setLogin={setLogin}
-        shutMac={shutMac}
-        sleepMac={sleepMac}
-        restartMac={restartMac}
-      />
+      <>
+        <Desktop
+          setLogin={setLogin}
+          shutMac={shutMac}
+          sleepMac={sleepMac}
+          restartMac={restartMac}
+        />
+        <ContextMenu />
+      </>
     );
   } else {
     return (
-      <Login
-        setLogin={setLogin}
-        shutMac={shutMac}
-        sleepMac={sleepMac}
-        restartMac={restartMac}
-      />
+      <>
+        <Login
+          setLogin={setLogin}
+          shutMac={shutMac}
+          sleepMac={sleepMac}
+          restartMac={restartMac}
+        />
+        <ContextMenu />
+      </>
     );
   }
 }
