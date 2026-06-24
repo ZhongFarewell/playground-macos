@@ -9,14 +9,15 @@ export interface MacActions {
 
 export {
   AppsData,
-  BearMdData,
-  BearData,
   LaunchpadData,
   MusicData,
   TerminalData,
+  TyporaNote,
   UserData,
   WallpaperData,
   WebsitesData,
   SiteSectionData,
   SiteData
 } from "./configs";
+
+export { MenuGroup, AppMenuDef } from "./menus";

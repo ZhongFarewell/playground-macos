@@ -19,6 +19,7 @@ interface DesktopState {
   maxZ: number;
   showLaunchpad: boolean;
   currentTitle: string;
+  currentAppId: string | null;
   hideDockAndTopbar: boolean;
   spotlight: boolean;
 }
@@ -32,6 +33,7 @@ export default function Desktop(props: MacActions) {
     maxZ: 2,
     showLaunchpad: false,
     currentTitle: "Finder",
+    currentAppId: null,
     hideDockAndTopbar: false,
     spotlight: false
   } as DesktopState);
@@ -39,9 +41,13 @@ export default function Desktop(props: MacActions) {
   const [spotlightBtnRef, setSpotlightBtnRef] =
     useState<React.RefObject<HTMLDivElement> | null>(null);
 
-  const { dark, brightness } = useStore((state) => ({
+  // 全局菜单快捷键（按当前 app 路由）
+  useMenuShortcuts(state.currentAppId);
+
+  const { dark, brightness, customWallpaper } = useStore((state) => ({
     dark: state.dark,
-    brightness: state.brightness
+    brightness: state.brightness,
+    customWallpaper: state.customWallpaper
   }));
 
   const getAppsData = (): void => {
@@ -154,9 +160,22 @@ export default function Desktop(props: MacActions) {
     setAppMax(id, false);
     const showApps = state.showApps;
     showApps[id] = false;
+    // 回退 currentAppId：找剩余可见 app 中 z 最高的；没有则 null
+    let nextAppId: string | null = null;
+    let nextZ = -1;
+    const appsZ = state.appsZ;
+    for (const appId of Object.keys(showApps)) {
+      if (showApps[appId] && !state.minApps[appId] && appsZ[appId] > nextZ) {
+        nextZ = appsZ[appId];
+        nextAppId = appId;
+      }
+    }
+    const nextApp = nextAppId ? apps.find((a) => a.id === nextAppId) : undefined;
     setState({
       ...state,
       showApps: showApps,
+      currentAppId: nextAppId,
+      currentTitle: nextApp ? nextApp.title : "Finder",
       hideDockAndTopbar: false
     });
   };
@@ -184,7 +203,8 @@ export default function Desktop(props: MacActions) {
       showApps: showApps,
       appsZ: appsZ,
       maxZ: maxZ,
-      currentTitle: currentApp.title
+      currentTitle: currentApp.title,
+      currentAppId: id
     });
 
     const minApps = state.minApps;
@@ -239,13 +259,17 @@ export default function Desktop(props: MacActions) {
     <div
       className="size-full overflow-hidden bg-center bg-cover"
       style={{
-        backgroundImage: `url(${dark ? wallpapers.night : wallpapers.day})`,
+        backgroundImage: `url(${
+          customWallpaper ?? (dark ? wallpapers.night : wallpapers.day)
+        })`,
         filter: `brightness( ${(brightness as number) * 0.7 + 50}% )`
       }}
     >
       {/* Top Menu Bar */}
       <TopBar
         title={state.currentTitle}
+        currentAppId={state.currentAppId}
+        onQuitApp={() => state.currentAppId && closeApp(state.currentAppId)}
         setLogin={props.setLogin}
         shutMac={props.shutMac}
         sleepMac={props.sleepMac}

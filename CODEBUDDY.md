@@ -64,7 +64,7 @@ Login flow (replaces the original static password mock):
 
 ### Auto-imports (critical)
 
-`vite.config.ts` uses `unplugin-auto-import` with `dirs: ["src/hooks", "src/stores", "src/components/**"]`. This means **hooks, the store, and all components are available globally without import**. The generated `src/auto-imports.d.ts` lists what's auto-imported (e.g. `useState`, `useStore`, `useWindowSize`, `AppWindow`, `Bear`, `TopBar`, etc.).
+`vite.config.ts` uses `unplugin-auto-import` with `dirs: ["src/hooks", "src/stores", "src/components/**"]`. This means **hooks, the store, and all components are available globally without import**. The generated `src/auto-imports.d.ts` lists what's auto-imported (e.g. `useState`, `useStore`, `useWindowSize`, `AppWindow`, `TopBar`, etc.).
 
 - Do **not** add explicit imports for these symbols — they are already global. Adding them can cause duplicate-declaration errors.
 - React APIs (`useState`, `useEffect`, `useRef`, …) are also auto-imported; no `import React` is needed for hooks (though some files still `import React` for types/JSX namespace — keep that where used).
@@ -89,17 +89,46 @@ There is an intentional "boundary for windows" trick: windows are positioned wit
 
 ### Desktop chrome
 
-- `src/components/menus/TopBar.tsx` — top menu bar (current app title, clock, control center, spotlight trigger, battery/wifi menus).
+- `src/components/menus/TopBar.tsx` — top menu bar. Left side: Apple logo + `MenuBar` (renders current app's name as bold clickable + File/Edit/etc. menus declared by the app via `useAppMenus`). Right side: clock, control center, spotlight trigger, battery/wifi menus. Receives `currentAppId` + `onQuitApp` from Desktop.
+- `src/components/menus/MenuBar.tsx` — macOS-style menu bar with hover-switching (click one menu, hover adjacent to switch). Reads `appMenus[currentAppId]` from the menu slice. App name is bold + clickable (About/Quit menu).
 - `src/components/dock/Dock.tsx` + `DockItem.tsx` — bottom dock with framer-motion magnification driven by a `useMotionValue` for mouse X.
 - `src/components/Spotlight.tsx` — Spotlight search (`Cmd/Space`-style) to open apps / toggle Launchpad.
 - `src/components/Launchpad.tsx` — full-screen app grid (config in `src/configs/launchpad.ts`).
-- `src/components/menus/` — `AppleMenu`, `ControlCenterMenu`, `WifiMenu`, `Battery`, plus `base.tsx` exporting `MenuItem` / `MenuItemGroup` primitives for dropdown menus.
+- `src/components/menus/` — `AppleMenu`, `ControlCenterMenu`, `WifiMenu`, `Battery`, `MenuBar`, plus `base.tsx` exporting `MenuItem` (supports `disabled`/`shortcut`) / `MenuItemGroup` primitives for dropdown menus.
+
+### App menu system (`src/hooks/useAppMenus.ts` + `src/stores/slices/menu.ts`)
+
+Apps declare their own top-bar menus (File/Edit/etc.) by calling `useAppMenus(appId, () => groups, deps)` in their component. The hook registers menu groups + shortcuts into the `menu` slice on mount, unregisters on unmount, and re-registers when `deps` change (so `onClick` closures stay fresh). `MenuBar` reads `appMenus[currentAppId]` from the store. Menu items use the same `MenuItemDef` interface as the context menu system (`src/types/contextMenu.d.ts`). Shortcuts (⌘N/O/S/Q etc.) are globally listened via `useMenuShortcuts(currentAppId)` (called in Desktop), routed by `currentAppId` — matches macOS "active app" concept. `currentAppId` lives in Desktop's local state (not store); `closeApp` falls back to the highest-z visible app.
+
+### App code organization (mandatory for non-trivial apps)
+
+Apps with more than ~150 lines **must** be split by responsibility into a folder under `src/components/apps/{app-id}/`. The main component file (e.g. `Photos.tsx`) is auto-imported globally (so `apps.tsx` can use `<Photos />` without import). All other files in the folder are **explicitly imported** by the main file — they are NOT auto-imported (avoids global namespace pollution).
+
+Required structure:
+
+```
+src/components/apps/{app-id}/
+  ├── {App}.tsx           # Main component — only composition + JSX. Auto-imported globally.
+  ├── {Sub}.tsx           # Sub-components (e.g. PhotoCell, PhotoViewer) — explicit import
+  ├── use{App}State.ts    # Custom hook: all state + handlers (fetch, save, rename, etc.) — explicit import
+  └── menus.ts            # Menu group definitions for useAppMenus (a build function + deps) — explicit import
+```
+
+Rules:
+- Main component (`{App}.tsx`) should be thin: call `use{App}State()` for state/handlers, call `useAppMenus()` for menu registration, compose sub-components in JSX. No business logic here.
+- `use{App}State.ts` returns `{ state, handlers }` — all `useState`/`useCallback`/`useEffect` live here.
+- `menus.ts` exports a `buildMenus(handlers)` function + a `menuDeps` array, so the main component can call `useAppMenus(appId, () => buildMenus(handlers), deps)`.
+- Sub-components receive props only — they don't call app-level hooks. If a sub-component needs store access (e.g. `useContextMenu`), it calls the global hook directly.
+- Dialog/modal components (e.g. `TyporaSaveDialog`) live alongside other sub-components in the same folder.
+- Small apps (under ~150 lines, like VSCode/FaceTime) can stay as a single file in `src/components/apps/{App}.tsx` — no need to create a folder.
 
 ### Built-in apps (`src/components/apps/`)
 
-`Bear`, `Typora` (Milkdown WYSIWYG markdown editor), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
+`Typora` (Milkdown WYSIWYG markdown editor with GitHub-persisted notes — see "Typora app" below), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
 
-**Photos app** (`src/components/apps/Photos.tsx`): Simulates macOS Photos. Fetches all photo metadata in one request (`pageSize: 9999`), renders a grid with `content-visibility: auto` + `loading="lazy"` + `decoding="async"` (not a virtual list — DOM nodes stay mounted so images don't reload on scroll). Grid columns use `repeat(auto-fill, minmax(120px, 1fr))` so thumbnail size stays constant while column count adapts to window width (matches macOS Photos behavior — maximizing adds columns, not enlarges thumbnails). Features: skeleton screen during load, error state with "Try Again" retry button, empty state, full-screen image viewer with ← → navigation, ESC close, bottom counter. App icon `public/img/icons/photos.png` must be supplied manually (downloaded from macOS Icon Gallery or similar).
+**Typora app** (`src/components/apps/typora/`): WYSIWYG markdown editor backed by a GitHub repo (`ZhongFarewell/macos-notes`, branch `main`). Folder structure follows the app code organization rule: `Typora.tsx` (main, auto-imported) + `MilkdownEditor.tsx` + `useTyporaState.ts` (state/handlers) + `menus.ts` + dialog components (`TyporaOpenPanel`/`TyporaSaveDialog`/`TyporaPatDialog`/`TyporaRenameDialog`). Repo layout: root `index.json` (note manifest, non-existent treated as empty array) + `notes/{id}.md` files. Reads use GitHub Contents API (real-time, no CDN cache); writes require a fine-grained GitHub PAT (stored in `localStorage` key `typora_github_pat` — plaintext, user accepts the risk). No in-window toolbar — all operations (New ⌘N / Open… ⌘O / Open from GitHub / Save ⌘S / Rename… / Export…) are exposed via the macOS-style top menu bar through `useAppMenus("typora", ...)` (see `menus.ts`). Save menu triggers a submenu choice (Save to GitHub / Save to Local download). Drag-and-drop `.md`/`.markdown`/`.txt` files into the window to open them. Service layer in `src/services/typora.ts` wraps GitHub Contents API (base64 encode/decode, sha-based updates). Deviates from real Typora in: (1) no independent window per document (browser limitation), (2) custom Open/Save modals replace native system dialogs (browser limitation), (3) saves to GitHub instead of local filesystem. Milkdown `markdownUpdated` callback syncs content to Zustand `typoraMd` for cross-component access.
+
+**Photos app** (`src/components/apps/photos/`): Simulates macOS Photos. Folder structure: `Photos.tsx` (main, auto-imported) + `PhotoCell.tsx` + `PhotoViewer.tsx` + `usePhotosState.ts` + `menus.ts` + `types.ts`. Fetches all photo metadata in one request (`pageSize: 9999`), renders a grid with `content-visibility: auto` + `loading="lazy"` + `decoding="async"` (not a virtual list — DOM nodes stay mounted so images don't reload on scroll). Grid columns use `repeat(auto-fill, minmax(120px, 1fr))` so thumbnail size stays constant while column count adapts to window width (matches macOS Photos behavior — maximizing adds columns, not enlarges thumbnails). Features: skeleton screen during load, error state with "Try Again" retry button, empty state, full-screen image viewer with ← → navigation, ESC close, zoom/pan, bottom info bar + zoom slider. Menus via `useAppMenus("photos", ...)` (File: Export; Image: Set as Desktop Picture; View: sort order). Right-click on thumbnail: Set as Wallpaper / Copy Image Address / Export (uses `useContextMenu` hook). "Set as Desktop Picture" writes to system slice's `customWallpaper` (Desktop reads it for background). App icon `public/img/icons/photos.png` must be supplied manually.
 
 ### Hooks (`src/hooks/`)
 

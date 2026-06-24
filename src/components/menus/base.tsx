@@ -3,6 +3,10 @@ import React from "react";
 interface MenuItemProps {
   onClick?: (e: React.MouseEvent<HTMLLIElement>) => void;
   children: React.ReactNode;
+  /** 是否禁用（灰色不可点） */
+  disabled?: boolean;
+  /** 快捷键提示，如 "⌘O"，右对齐显示 */
+  shortcut?: string;
 }
 
 interface MenuItemGroupProps {
@@ -11,12 +15,16 @@ interface MenuItemGroupProps {
 }
 
 const MenuItem = (props: MenuItemProps) => {
+  const { disabled, shortcut } = props;
   return (
     <li
-      onClick={props.onClick}
-      className="leading-6 cursor-default px-2.5 rounded hover:text-white hover:bg-blue-500"
+      onClick={disabled ? undefined : props.onClick}
+      className={`leading-6 cursor-default px-2.5 rounded flex justify-between items-center gap-4 ${
+        disabled ? "opacity-40" : "hover:text-white hover:bg-blue-500"
+      }`}
     >
-      {props.children}
+      <span>{props.children}</span>
+      {shortcut && <span className="text-xs opacity-70">{shortcut}</span>}
     </li>
   );
 };

@@ -52,6 +52,8 @@ const CCMIcon = ({ size }: { size: number }) => {
 
 interface TopBarProps extends MacActions {
   title: string;
+  currentAppId: string | null;
+  onQuitApp: () => void;
   setSpotlightBtnRef: (value: React.RefObject<HTMLDivElement>) => void;
   hide: boolean;
   toggleSpotlight: () => void;
@@ -179,14 +181,11 @@ const TopBar = (props: TopBarProps) => {
         >
           <span className="i-ri:apple-fill text-base" />
         </TopBarItem>
-        <TopBarItem
-          className="font-semibold px-2"
-          onMouseEnter={() => {
-            if (state.showAppleMenu) toggleAppleMenu();
-          }}
-        >
-          {props.title}
-        </TopBarItem>
+        <MenuBar
+          currentAppId={props.currentAppId}
+          currentAppTitle={props.title}
+          onQuitApp={props.onQuitApp}
+        />
       </div>
 
       {/* Open this when clicking on Apple logo */}
