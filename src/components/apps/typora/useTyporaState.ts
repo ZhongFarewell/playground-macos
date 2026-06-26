@@ -175,7 +175,7 @@ export const useTyporaState = (): TyporaState => {
       setShowOpen(false);
       setLoading(true);
       try {
-        const content = await getNoteContent(note.file);
+        const content = await getNoteContent(note);
         if (content === null) {
           setToast({ msg: "Failed to load note", type: "error" });
           return;
@@ -198,9 +198,9 @@ export const useTyporaState = (): TyporaState => {
       setLoading(true);
       try {
         if (doc.note) {
-          const ok = await saveNote(doc.note, doc.content);
-          if (ok) {
-            setDoc((d) => ({ ...d, dirty: false }));
+          const updated = await saveNote(doc.note, doc.content);
+          if (updated) {
+            setDoc((d) => ({ ...d, note: updated, dirty: false }));
             setToast({ msg: "Saved", type: "success" });
           } else {
             setToast({ msg: "Save failed", type: "error" });

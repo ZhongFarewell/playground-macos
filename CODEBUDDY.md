@@ -48,6 +48,8 @@ Each slice is a `StateCreator<Slice>`; new slices should follow the same `create
 
 - `index.ts` — Axios instance with `withCredentials: true` (backend uses httpOnly `align_id` cookie for session). `baseURL` reads `window.alignConfig.apiPrefix + "/api"`. Exports `loginAlign` (POST `/login`, FormData with AES-encrypted `user` field), `authAlign` (GET `/auth` cookie session check), `logoutAlign` (GET `/logout` clears cookie), `getPhotoList` (GET `/resources/memory/image`), `photoUrl(filename)` (builds MinIO URL: `blogSourceMinio + "/memoryimage/" + filename`).
 - `encrypt.ts` — AES-CBC encryption (key/iv = `2120131404240929`), aligned with dashboard `src/util/index.ts` and backend `helper.encodeUser`. Used to encrypt `{ username, password }` for login.
+- `typora.ts` — Typora 笔记持久化，基于 `database/` 模块（笔记存为 `typora:note` 类型 record，正文走 `blobs/{id}.md`）。详见下方 "Database 持久化系统" 章节。
+- `database/` — 通用持久化系统，把 GitHub 仓库 `ZhongFarewell/macos-database` 当数据库用。**设计相关功能时务必先查阅 `docs/database/` 文档**（详见下方 "Database 持久化系统" 章节）。
 
 **Runtime config (`public/CONFIG.js`):** Sets `window.alignConfig = { apiPrefix, sourceHost, blogSourceMinio }`. `public/` is not processed by Vite — do not use `process.env.*` here (browser has no `process`). Dev uses Vite proxy (`/api` → Align-server, `/align-minio` → zhongfw.online); prod hardcodes values. Type declaration in `src/vite-env.d.ts` (`declare global { interface Window { alignConfig?: AlignConfig } }`).
 
@@ -126,7 +128,7 @@ Rules:
 
 `Typora` (Milkdown WYSIWYG markdown editor with GitHub-persisted notes — see "Typora app" below), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
 
-**Typora app** (`src/components/apps/typora/`): WYSIWYG markdown editor backed by a GitHub repo (`ZhongFarewell/macos-notes`, branch `main`). Folder structure follows the app code organization rule: `Typora.tsx` (main, auto-imported) + `MilkdownEditor.tsx` + `useTyporaState.ts` (state/handlers) + `menus.ts` + dialog components (`TyporaOpenPanel`/`TyporaSaveDialog`/`TyporaPatDialog`/`TyporaRenameDialog`). Repo layout: root `index.json` (note manifest, non-existent treated as empty array) + `notes/{id}.md` files. Reads use GitHub Contents API (real-time, no CDN cache); writes require a fine-grained GitHub PAT (stored in `localStorage` key `typora_github_pat` — plaintext, user accepts the risk). No in-window toolbar — all operations (New ⌘N / Open… ⌘O / Open from GitHub / Save ⌘S / Rename… / Export…) are exposed via the macOS-style top menu bar through `useAppMenus("typora", ...)` (see `menus.ts`). Save menu triggers a submenu choice (Save to GitHub / Save to Local download). Drag-and-drop `.md`/`.markdown`/`.txt` files into the window to open them. Service layer in `src/services/typora.ts` wraps GitHub Contents API (base64 encode/decode, sha-based updates). Deviates from real Typora in: (1) no independent window per document (browser limitation), (2) custom Open/Save modals replace native system dialogs (browser limitation), (3) saves to GitHub instead of local filesystem. Milkdown `markdownUpdated` callback syncs content to Zustand `typoraMd` for cross-component access.
+**Typora app** (`src/components/apps/typora/`): WYSIWYG markdown editor backed by the `macos-database` GitHub repo (via the `src/services/database/` persistence system — see "Database 持久化系统" below). Folder structure follows the app code organization rule: `Typora.tsx` (main, auto-imported) + `MilkdownEditor.tsx` + `useTyporaState.ts` (state/handlers) + `menus.ts` + dialog components (`TyporaOpenPanel`/`TyporaSaveDialog`/`TyporaPatDialog`/`TyporaRenameDialog`). Notes are stored as `typora:note` records (id = ULID, collection type): meta (title/excerpt/blob-ref) in `records/{id}.json`, content in `blobs/{id}.md`. Service layer in `src/services/typora.ts` wraps the database API (`queryByType`/`insertRecord`/`updateRecord`/`readBlob`/`writeBlob`). PAT stored in `localStorage` key `database_github_pat` (auto-migrated from the old `typora_github_pat` key on module load). No in-window toolbar — all operations (New ⌘N / Open… ⌘O / Save ⌘S / Rename… / Export…) are exposed via the macOS-style top menu bar through `useAppMenus("typora", ...)` (see `menus.ts`). Save menu triggers a submenu choice (Save to GitHub / Save to Local download). Drag-and-drop `.md`/`.markdown`/`.txt` files into the window to open them. Deviates from real Typora in: (1) no independent window per document (browser limitation), (2) custom Open/Save modals replace native system dialogs (browser limitation), (3) saves to GitHub instead of local filesystem. Milkdown `markdownUpdated` callback syncs content to Zustand `typoraMd` for cross-component access.
 
 **Photos app** (`src/components/apps/photos/`): Simulates macOS Photos. Folder structure: `Photos.tsx` (main, auto-imported) + `PhotoCell.tsx` + `PhotoViewer.tsx` + `usePhotosState.ts` + `menus.ts` + `types.ts`. Fetches all photo metadata in one request (`pageSize: 9999`), renders a grid with `content-visibility: auto` + `loading="lazy"` + `decoding="async"` (not a virtual list — DOM nodes stay mounted so images don't reload on scroll). Grid columns use `repeat(auto-fill, minmax(120px, 1fr))` so thumbnail size stays constant while column count adapts to window width (matches macOS Photos behavior — maximizing adds columns, not enlarges thumbnails). Features: skeleton screen during load, error state with "Try Again" retry button, empty state, full-screen image viewer with ← → navigation, ESC close, zoom/pan, bottom info bar + zoom slider. Menus via `useAppMenus("photos", ...)` (File: Export; Image: Set as Desktop Picture; View: sort order). Right-click on thumbnail: Set as Wallpaper / Copy Image Address / Export (uses `useContextMenu` hook). "Set as Desktop Picture" writes to system slice's `customWallpaper` (Desktop reads it for background). App icon `public/img/icons/photos.png` must be supplied manually.
 
@@ -160,6 +162,34 @@ return <img ref={photoRef as any} src={url} />;
 
 **Design rationale:** macOS context menus are context-sensitive (right-clicking a photo vs. text vs. desktop shows different items). The collect-event-bubble pattern lets each element self-declare its menu items without a central registry — matching macOS behavior. If an element doesn't declare anything, the bubble continues to parents, and ultimately the default menu shows. This aligns with the future plugin architecture: an independently bundled app just needs to comply with the `MenuItemDef` protocol and listen for `contextmenu-collect` events.
 
+### Database 持久化系统 (`src/services/database/`)
+
+把 GitHub 仓库 `ZhongFarewell/macos-database` 当数据库用，承载 macOS 模拟器中所有需要持久化的数据（Typora 笔记、浏览器历史/书签、系统设置、桌面状态等）。
+
+**📋 设计相关功能时务必先查阅文档**：`docs/database/` 目录下有完整架构文档，**动手前必读**：
+
+| 场景 | 必读文档 |
+|------|---------|
+| 新增持久化数据 / 接入新功能 | `docs/database/README.md` + `data-model.md` + `api-reference.md` |
+| 设计新的 type / 单例 vs 集合判定 | `docs/database/type-naming-convention.md` |
+| 理解读写流程 / 排查请求问题 | `docs/database/sha-cache-strategy.md` + `queue-and-flush.md` |
+| 评估 GitHub API 限制 / 性能权衡 | `docs/database/github-api-constraints.md` |
+| 理解仓库目录结构 / 文件格式 | `docs/database/storage-layout.md` |
+| 理解整体架构 / 模块分层 | `docs/database/architecture.md` |
+
+**核心设计原则**（详见 `docs/database/README.md`）：
+1. 统一数据模型：所有数据都是 `DatabaseRecord`，靠 `type` 字段分类
+2. localStorage 是真相源，GitHub 是异步副本
+3. sha 乐观锁 + 本地缓存（PUT 前用本地 sha，冲突才 GET）
+4. 写队列 debounce 2s + 串行 flush
+5. 大文本走 `blobs/`，不进 record
+
+**对外 API 入口**：`~/services/database`（业务代码只 import 这一个，不直接 import 内部模块）。核心 API：`initDatabase` / `getSingleton` / `writeSingleton` / `queryByType` / `insertRecord` / `updateRecord` / `deleteRecord` / `readBlob` / `writeBlob` / `flushAll`。详见 `docs/database/api-reference.md`。
+
+**type 命名约定**：`{app}:{feature}` 格式（如 `browser:history`、`system:settings`、`typora:note`）。单例 id === type，集合 id = ULID。详见 `docs/database/type-naming-convention.md`。
+
+**适用边界**：单用户 portfolio 项目，< 1 万条 record。不适用多用户协作、高频写、大二进制存储（图片走 MinIO）。未来如需迁移到真数据库，只换 `github.ts` 通信层。
+
 ### Styling — UnoCSS (`unocss.config.ts`)
 
 Uses `presetUno`, `presetAttributify` (attribute-based classes like `<div text="sm gray-200" />`), `presetIcons` (`i-{set}:{icon}` classes render inline SVGs — e.g. `i-gg:close`, `i-ri:restart-line`), and three transformers (directives, variant groups, attributify-jsx).
@@ -183,3 +213,4 @@ Strict mode, `moduleResolution: "Node"`, `jsx: "react-jsx"`, `noEmit: true` (Vit
 - `public/CONFIG.js` is not processed by Vite — use hardcoded values, not `process.env.*`.
 - `src/configs/user.ts` now has a `username` field (backend `Users.username` for login). The `password` field is deprecated (was for the old static mock login). `name` is the display name shown on the login page and AppleMenu's "Log Out {name}...".
 - Commit hooks run `lint-staged`; make sure `pnpm lint` passes before committing.
+- 新增持久化数据时，**先读 `docs/database/` 文档**（尤其是 `type-naming-convention.md` 和 `api-reference.md`），按约定设计 type 和数据结构。不要绕过 database 模块直接调 GitHub API——所有持久化都走 `~/services/database` 统一入口。

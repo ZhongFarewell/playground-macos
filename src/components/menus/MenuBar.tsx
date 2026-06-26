@@ -74,6 +74,7 @@ const MenuBar = ({ currentAppId, currentAppTitle, onQuitApp }: MenuBarProps) => 
               key={item.key || idx}
               disabled={item.disabled}
               shortcut={item.shortcut}
+              checked={item.checked}
               onClick={() => handleItemClick(item)}
             >
               {item.label}

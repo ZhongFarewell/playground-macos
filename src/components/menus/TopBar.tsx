@@ -54,6 +54,8 @@ interface TopBarProps extends MacActions {
   title: string;
   currentAppId: string | null;
   onQuitApp: () => void;
+  /** 打开 System Settings 窗口（从 AppleMenu 触发） */
+  openSettings: () => void;
   setSpotlightBtnRef: (value: React.RefObject<HTMLDivElement>) => void;
   hide: boolean;
   toggleSpotlight: () => void;
@@ -198,6 +200,7 @@ const TopBar = (props: TopBarProps) => {
           toggleAppleMenu={toggleAppleMenu}
           btnRef={appleBtnRef}
           userName={user.name}
+          openSettings={props.openSettings}
         />
       )}
 

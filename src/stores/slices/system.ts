@@ -2,6 +2,9 @@ import type { StateCreator } from "zustand";
 import { enterFullScreen, exitFullScreen } from "~/utils";
 import wallpapers from "~/configs/wallpapers";
 
+/** 壁纸填充方式（对应 macOS Wallpaper 的填充下拉） */
+export type WallpaperFit = "cover" | "contain" | "stretch" | "center";
+
 export interface SystemSlice {
   dark: boolean;
   volume: number;
@@ -12,6 +15,10 @@ export interface SystemSlice {
   fullscreen: boolean;
   /** 自定义壁纸 URL，null = 用默认 day/night 壁纸 */
   customWallpaper: string | null;
+  /** 壁纸填充方式 */
+  wallpaperFit: WallpaperFit;
+  /** 从 Photos 设过的壁纸 URL 列表（最新在前，持久化在 system:wallpaper） */
+  userWallpapers: string[];
   toggleDark: () => void;
   toggleWIFI: () => void;
   toggleBluetooth: () => void;
@@ -20,6 +27,8 @@ export interface SystemSlice {
   setVolume: (v: number) => void;
   setBrightness: (v: number) => void;
   setWallpaper: (url: string | null) => void;
+  setWallpaperFit: (fit: WallpaperFit) => void;
+  setUserWallpapers: (urls: string[]) => void;
 }
 
 export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
@@ -31,6 +40,8 @@ export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
   airdrop: true,
   fullscreen: false,
   customWallpaper: null,
+  wallpaperFit: "cover",
+  userWallpapers: [],
   toggleDark: () =>
     set((state) => {
       if (!state.dark) document.documentElement.classList.add("dark");
@@ -47,7 +58,9 @@ export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
     }),
   setVolume: (v) => set(() => ({ volume: v })),
   setBrightness: (v) => set(() => ({ brightness: v })),
-  setWallpaper: (url) => set(() => ({ customWallpaper: url }))
+  setWallpaper: (url) => set(() => ({ customWallpaper: url })),
+  setWallpaperFit: (fit) => set(() => ({ wallpaperFit: fit })),
+  setUserWallpapers: (urls) => set(() => ({ userWallpapers: urls }))
 });
 
 /** 获取当前壁纸 URL（自定义优先，否则按深色模式取默认） */

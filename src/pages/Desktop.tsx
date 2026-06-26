@@ -1,7 +1,60 @@
 import React from "react";
 import { apps, wallpapers } from "~/configs";
-import { minMarginY } from "~/utils";
+import { minMarginY, minMarginX } from "~/utils";
 import type { MacActions } from "~/types";
+import type { PersistWindowState } from "~/components/AppWindow";
+
+/** localStorage key：窗口位置/大小持久化（仅本地，不进 GitHub） */
+const WINDOW_STATE_KEY = "mdb:desktop:window-state-local";
+
+interface SavedWindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  max: boolean;
+}
+
+/** 从 localStorage 读取所有窗口状态 */
+const loadWindowStates = (): Record<string, SavedWindowState> => {
+  try {
+    const raw = localStorage.getItem(WINDOW_STATE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+/** 写入所有窗口状态到 localStorage */
+const saveWindowStates = (states: Record<string, SavedWindowState>): void => {
+  try {
+    localStorage.setItem(WINDOW_STATE_KEY, JSON.stringify(states));
+  } catch {
+    // 配额满或被禁用，静默降级
+  }
+};
+
+/**
+ * Clamp 窗口状态到当前视口可见区域。
+ * 跨设备/视口变化时保证窗口至少部分可见。
+ */
+const clampToViewport = (
+  s: SavedWindowState,
+  winWidth: number,
+  winHeight: number,
+  dockSize: number
+): { x: number; y: number; width: number; height: number } => {
+  const width = Math.min(s.width, winWidth);
+  const height = Math.min(s.height, winHeight - minMarginY);
+  // x 含 boundary 偏移（+ winWidth），clamp 到 [winWidth + minMarginX, winWidth*2 - width - minMarginX]
+  const x = Math.min(
+    winWidth * 2 - width - minMarginX,
+    Math.max(winWidth + minMarginX, s.x)
+  );
+  // y clamp 到 [0, winHeight - height - dockSize - minMarginY]
+  const y = Math.min(winHeight - height - dockSize - minMarginY, Math.max(0, s.y));
+  return { x, y, width, height };
+};
 
 interface DesktopState {
   showApps: {
@@ -41,14 +94,25 @@ export default function Desktop(props: MacActions) {
   const [spotlightBtnRef, setSpotlightBtnRef] =
     useState<React.RefObject<HTMLDivElement> | null>(null);
 
+  // 窗口位置/大小持久化（仅 localStorage，不进 GitHub）
+  // 启动时同步加载，closeApp 时更新
+  const [windowStates, setWindowStates] = useState<Record<string, SavedWindowState>>(() =>
+    loadWindowStates()
+  );
+  const dockSize = useStore((s) => s.dockSize);
+  const { winWidth, winHeight } = useWindowSize();
+
   // 全局菜单快捷键（按当前 app 路由）
   useMenuShortcuts(state.currentAppId);
 
-  const { dark, brightness, customWallpaper } = useStore((state) => ({
+  const { dark, brightness, customWallpaper, wallpaperFit } = useStore((state) => ({
     dark: state.dark,
     brightness: state.brightness,
-    customWallpaper: state.customWallpaper
+    customWallpaper: state.customWallpaper,
+    wallpaperFit: state.wallpaperFit
   }));
+
+  // 壁纸渲染走 backgroundImage（见下方 bgStyle），wallpaperUrl 不再单独使用
 
   const getAppsData = (): void => {
     let showApps = {},
@@ -82,6 +146,9 @@ export default function Desktop(props: MacActions) {
     getAppsData();
   }, []);
 
+  // 壁纸恢复 & PAT 检测已移至 boot 序列（src/boot/），Desktop 假设 boot 已完成，
+  // 直接从 store 读 customWallpaper / userWallpapers（boot Phase 2 已写入）。
+
   const toggleLaunchpad = (target: boolean): void => {
     const r = document.querySelector(`#launchpad`) as HTMLElement;
     if (target) {
@@ -92,7 +159,9 @@ export default function Desktop(props: MacActions) {
       r.style.transition = "ease-out 0.2s";
     }
 
-    setState({ ...state, showLaunchpad: target });
+    // 函数式更新：避免连续 setState（如 Launchpad 点应用时 toggle + openApp 串联）
+    // 里 spread 过期 state 覆盖 showLaunchpad 的更新
+    setState((prev) => ({ ...prev, showLaunchpad: target }));
   };
 
   const toggleSpotlight = (): void => {
@@ -138,22 +207,33 @@ export default function Desktop(props: MacActions) {
   const minimizeApp = (id: string): void => {
     setWindowPosition(id);
 
-    // get the corrosponding dock icon's position
-    let r = document.querySelector(`#dock-${id}`) as HTMLElement;
-    const dockAppRect = r.getBoundingClientRect();
+    // 非 dock app（如 Settings）：直接最小化，不做 dock 图标动画
+    let dockEl = document.querySelector(`#dock-${id}`) as HTMLElement | null;
+    if (!dockEl) {
+      setAppMin(id, true);
+      return;
+    }
+    const dockAppRect = dockEl.getBoundingClientRect();
 
-    r = document.querySelector(`#window-${id}`) as HTMLElement;
+    dockEl = document.querySelector(`#window-${id}`) as HTMLElement;
     // const appRect = r.getBoundingClientRect();
-    const posY = window.innerHeight - r.offsetHeight / 2 - minMarginY;
+    const posY = window.innerHeight - dockEl.offsetHeight / 2 - minMarginY;
     // "+ window.innerWidth" because of the boundary for windows
-    const posX = window.innerWidth + dockAppRect.x - r.offsetWidth / 2 + 25;
+    const posX = window.innerWidth + dockAppRect.x - dockEl.offsetWidth / 2 + 25;
 
     // translate the window to that position
-    r.style.transform = `translate(${posX}px, ${posY}px) scale(0.2)`;
-    r.style.transition = "ease-out 0.3s";
+    dockEl.style.transform = `translate(${posX}px, ${posY}px) scale(0.2)`;
+    dockEl.style.transition = "ease-out 0.3s";
 
     // add it to the minimized app list
     setAppMin(id, true);
+  };
+
+  // AppWindow 关闭前回传状态，记录到 windowStates + localStorage
+  const handleWindowClose = (id: string, s: PersistWindowState): void => {
+    const next = { ...windowStates, [id]: s };
+    setWindowStates(next);
+    saveWindowStates(next);
   };
 
   const closeApp = (id: string): void => {
@@ -183,6 +263,7 @@ export default function Desktop(props: MacActions) {
   const openApp = (id: string): void => {
     // add it to the shown app list
     const showApps = state.showApps;
+    const wasClosed = !showApps[id];
     showApps[id] = true;
 
     // move to the top (use a maximum z-index)
@@ -198,14 +279,29 @@ export default function Desktop(props: MacActions) {
       throw new TypeError(`App ${id} is undefined.`);
     }
 
-    setState({
-      ...state,
-      showApps: showApps,
-      appsZ: appsZ,
+    // 从关闭状态打开时，恢复持久化的 max 状态
+    const maxApps = state.maxApps;
+    if (wasClosed) {
+      const saved = windowStates[id];
+      if (saved?.max) {
+        maxApps[id] = true;
+      } else {
+        maxApps[id] = false;
+      }
+    }
+
+    // 函数式更新：避免 spread 过期 state 覆盖其他字段的并发更新
+    // （如 Launchpad 点应用时 toggleLaunchpad 已把 showLaunchpad 改 false）
+    setState((prev) => ({
+      ...prev,
+      showApps: { ...showApps },
+      appsZ: { ...appsZ },
+      maxApps: { ...maxApps },
       maxZ: maxZ,
       currentTitle: currentApp.title,
-      currentAppId: id
-    });
+      currentAppId: id,
+      hideDockAndTopbar: maxApps[id]
+    }));
 
     const minApps = state.minApps;
     // if the app has already been shown but minimized
@@ -218,13 +314,19 @@ export default function Desktop(props: MacActions) {
       r.style.transition = "ease-in 0.3s";
       // remove it from the minimized app list
       minApps[id] = false;
-      setState({ ...state, minApps });
+      setState((prev) => ({ ...prev, minApps: { ...minApps } }));
     }
   };
 
   const renderAppWindows = () => {
     return apps.map((app) => {
       if (app.desktop && state.showApps[app.id]) {
+        // 从持久化状态恢复（clamp 到当前视口）
+        const saved = windowStates[app.id];
+        const initialState = saved
+          ? clampToViewport(saved, winWidth, winHeight, dockSize)
+          : undefined;
+
         const props = {
           id: app.id,
           title: app.title,
@@ -241,7 +343,9 @@ export default function Desktop(props: MacActions) {
           close: closeApp,
           setMax: setAppMax,
           setMin: minimizeApp,
-          focus: openApp
+          focus: openApp,
+          initialState,
+          onClose: (s: PersistWindowState) => handleWindowClose(app.id, s)
         };
 
         return (
@@ -255,21 +359,36 @@ export default function Desktop(props: MacActions) {
     });
   };
 
+  // 按 wallpaperFit 计算背景样式（对应 macOS Wallpaper 的填充下拉）
+  const bgStyle: React.CSSProperties = {
+    backgroundImage: `url("${customWallpaper ?? (dark ? wallpapers.night : wallpapers.day)}")`,
+    filter: `brightness( ${(brightness as number) * 0.7 + 50}% )`
+  };
+  if (wallpaperFit === "stretch") {
+    bgStyle.backgroundSize = "100% 100%";
+  } else if (wallpaperFit === "center") {
+    bgStyle.backgroundSize = "auto";
+    bgStyle.backgroundRepeat = "no-repeat";
+    bgStyle.backgroundPosition = "center";
+  }
+
   return (
     <div
-      className="size-full overflow-hidden bg-center bg-cover"
-      style={{
-        backgroundImage: `url(${
-          customWallpaper ?? (dark ? wallpapers.night : wallpapers.day)
-        })`,
-        filter: `brightness( ${(brightness as number) * 0.7 + 50}% )`
-      }}
+      className={`size-full overflow-hidden bg-center ${
+        wallpaperFit === "contain"
+          ? "bg-contain bg-no-repeat"
+          : wallpaperFit === "cover"
+            ? "bg-cover"
+            : ""
+      }`}
+      style={bgStyle}
     >
       {/* Top Menu Bar */}
       <TopBar
         title={state.currentTitle}
         currentAppId={state.currentAppId}
         onQuitApp={() => state.currentAppId && closeApp(state.currentAppId)}
+        openSettings={() => openApp("settings")}
         setLogin={props.setLogin}
         shutMac={props.shutMac}
         sleepMac={props.sleepMac}
@@ -278,6 +397,9 @@ export default function Desktop(props: MacActions) {
         hide={state.hideDockAndTopbar}
         setSpotlightBtnRef={setSpotlightBtnRef}
       />
+
+      {/* 系统通知横幅（macOS Notification Center 风格，PAT 缺失等提示） */}
+      <SystemNotification onOpenApp={openApp} />
 
       {/* Desktop Apps */}
       <div className="window-bound z-10 absolute" style={{ top: minMarginY }}>
@@ -295,7 +417,11 @@ export default function Desktop(props: MacActions) {
       )}
 
       {/* Launchpad */}
-      <Launchpad show={state.showLaunchpad} toggleLaunchpad={toggleLaunchpad} />
+      <Launchpad
+        show={state.showLaunchpad}
+        toggleLaunchpad={toggleLaunchpad}
+        openApp={openApp}
+      />
 
       {/* Dock */}
       <Dock

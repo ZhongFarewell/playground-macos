@@ -7,6 +7,8 @@ interface MenuItemProps {
   disabled?: boolean;
   /** 快捷键提示，如 "⌘O"，右对齐显示 */
   shortcut?: string;
+  /** 是否选中（左侧显示 ✓，用于排序/视图等可切换项） */
+  checked?: boolean;
 }
 
 interface MenuItemGroupProps {
@@ -15,7 +17,7 @@ interface MenuItemGroupProps {
 }
 
 const MenuItem = (props: MenuItemProps) => {
-  const { disabled, shortcut } = props;
+  const { disabled, shortcut, checked } = props;
   return (
     <li
       onClick={disabled ? undefined : props.onClick}
@@ -23,7 +25,11 @@ const MenuItem = (props: MenuItemProps) => {
         disabled ? "opacity-40" : "hover:text-white hover:bg-blue-500"
       }`}
     >
-      <span>{props.children}</span>
+      <span className="flex items-center gap-1.5">
+        {/* macOS 选中态 ✓（未选中时占位保持对齐） */}
+        <span className={`w-3 text-xs ${checked ? "opacity-100" : "opacity-0"}`}>✓</span>
+        {props.children}
+      </span>
       {shortcut && <span className="text-xs opacity-70">{shortcut}</span>}
     </li>
   );

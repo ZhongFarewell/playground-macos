@@ -39,7 +39,14 @@ export const buildMenus = (s: PhotosState): AppMenuDef => [
       {
         key: "sort-desc",
         label: "Sort by Newest First",
+        checked: s.sortOrder === "desc",
         onClick: () => s.setSortOrder("desc")
+      },
+      {
+        key: "sort-asc",
+        label: "Sort by Oldest First",
+        checked: s.sortOrder === "asc",
+        onClick: () => s.setSortOrder("asc")
       }
     ]
   }
@@ -49,6 +56,7 @@ export const buildMenus = (s: PhotosState): AppMenuDef => [
 export const menuDeps = (s: PhotosState) => [
   s.activeIdx,
   s.sortedPhotos,
+  s.sortOrder,
   s.handleExport,
   s.handleSetWallpaper
 ];

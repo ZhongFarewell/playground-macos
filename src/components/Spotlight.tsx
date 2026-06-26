@@ -1,11 +1,10 @@
 import React from "react";
 import { format } from "date-fns";
-import { apps, launchpadApps } from "~/configs";
-import type { LaunchpadData, AppsData } from "~/types";
+import { apps } from "~/configs";
+import type { AppsData } from "~/types";
 
-const APPS: { [key: string]: (LaunchpadData | AppsData)[] } = {
-  app: apps,
-  portfolio: launchpadApps
+const APPS: { [key: string]: AppsData[] } = {
+  app: apps
 };
 
 const getRandom = (min: number, max: number) => {
@@ -84,7 +83,7 @@ export default function Spotlight({
 
     const text = searchText.toLowerCase();
     return APPS[type].filter(
-      (item: LaunchpadData | AppsData) =>
+      (item: AppsData) =>
         item.title.toLowerCase().includes(text) || item.id.toLowerCase().includes(text)
     );
   };
@@ -150,9 +149,8 @@ export default function Spotlight({
 
   const updateAppList = () => {
     const app = getTypeAppList("app", 0);
-    const portfolio = getTypeAppList("portfolio", app.appIdList.length);
 
-    const newAppIdList = [...app.appIdList, ...portfolio.appIdList];
+    const newAppIdList = [...app.appIdList];
     // don't show app details when there is no associating app
     if (newAppIdList.length === 0) setCurDetails(null);
 
@@ -162,14 +160,6 @@ export default function Spotlight({
           <div>
             <div className="spotlight-type">Applications</div>
             <ul className="w-full text-xs">{app.appList}</ul>
-          </div>
-        )}
-        {portfolio.appList.length !== 0 && (
-          <div>
-            <div className="spotlight-type mt-1.5 before:(content-empty absolute left-0 top-0 ml-2 w-63.5 border-t border-menu)">
-              Portfolio
-            </div>
-            <ul className="w-full text-xs">{portfolio.appList}</ul>
           </div>
         )}
       </div>
@@ -194,7 +184,7 @@ export default function Spotlight({
     const appId = appIdList[selectedIndex];
     const element = document.querySelector(`#spotlight-${appId}`) as HTMLElement;
     const type = element.dataset.appType as string;
-    const app = APPS[type].find((item: LaunchpadData | AppsData) => item.id === appId);
+    const app = APPS[type].find((item: AppsData) => item.id === appId);
 
     setCurrentDetailsWithType(app, type);
   };

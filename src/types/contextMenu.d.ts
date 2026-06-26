@@ -19,6 +19,8 @@ export interface MenuItemDef {
   disabled?: boolean;
   /** 是否分隔线（为 true 时其他字段忽略） */
   separator?: boolean;
+  /** 是否选中（显示 ✓，用于排序/视图等可切换项） */
+  checked?: boolean;
   /** 子菜单（macOS 支持二级菜单，预留） */
   children?: MenuItemDef[];
 }

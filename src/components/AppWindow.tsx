@@ -54,6 +54,10 @@ interface WindowProps extends TrafficProps {
   y?: number;
   z: number;
   focus: (id: string) => void;
+  /** 持久化恢复的初始状态（覆盖 props.x/y/width/height 默认值） */
+  initialState?: { x: number; y: number; width: number; height: number };
+  /** 关闭窗口时回传当前状态（Desktop 用于持久化） */
+  onClose?: (state: PersistWindowState) => void;
   children: React.ReactNode;
 }
 
@@ -62,6 +66,15 @@ interface WindowState {
   height: number;
   x: number;
   y: number;
+}
+
+/** 持久化的窗口状态（关闭时回传给 Desktop） */
+export interface PersistWindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  max: boolean;
 }
 
 const TrafficLights = ({ id, close, aspectRatio, max, setMax, setMin }: TrafficProps) => {
@@ -107,16 +120,20 @@ const Window = (props: WindowProps) => {
   const dockSize = useStore((state) => state.dockSize);
   const { winWidth, winHeight } = useWindowSize();
 
-  const initWidth = Math.min(winWidth, props.width || 640);
-  const initHeight = Math.min(winHeight, props.height || 400);
+  // 初始化：优先用持久化的 initialState，否则用 props 默认值 + clamp 到当前视口
+  const initWidth = Math.min(winWidth, props.initialState?.width ?? props.width ?? 640);
+  const initHeight = Math.min(
+    winHeight,
+    props.initialState?.height ?? props.height ?? 400
+  );
+  const defaultX = winWidth + (winWidth - initWidth) / 2 + (props.x || 0);
+  const defaultY = (winHeight - initHeight - dockSize - minMarginY) / 2 + (props.y || 0);
 
   const [state, setState] = useState<WindowState>({
     width: initWidth,
     height: initHeight,
-    // "+ winWidth" because of the boundary for windows
-    x: winWidth + (winWidth - initWidth) / 2 + (props.x || 0),
-    // "- minMarginY" because of the boundary for windows
-    y: (winHeight - initHeight - dockSize - minMarginY) / 2 + (props.y || 0)
+    x: props.initialState?.x ?? defaultX,
+    y: props.initialState?.y ?? defaultY
   });
   // 拖拽/resize 时提升合成层 + 关闭 transition，避免跟手延迟。
   // 全屏切换时 transition 常驻，size/position 平滑过渡（缩放动画）。
@@ -125,6 +142,18 @@ const Window = (props: WindowProps) => {
   // 全屏切换过渡期间隐藏内容，避免网格重排抖动影响观感
   const [maximizing, setMaximizing] = useState(false);
   const prevMax = useRef(props.max);
+
+  // 关闭窗口前回传当前状态（Desktop 用于持久化）
+  const handleClose = (id: string): void => {
+    props.onClose?.({
+      x: state.x,
+      y: state.y,
+      width: state.width,
+      height: state.height,
+      max: props.max
+    });
+    props.close(id);
+  };
 
   useEffect(() => {
     if (prevMax.current !== props.max) {
@@ -227,7 +256,7 @@ const Window = (props: WindowProps) => {
           aspectRatio={props.aspectRatio}
           setMax={props.setMax}
           setMin={props.setMin}
-          close={props.close}
+          close={handleClose}
         />
         <span className="font-semibold text-c-700">{props.title}</span>
       </div>

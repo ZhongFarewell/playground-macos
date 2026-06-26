@@ -1,30 +1,42 @@
-import { wallpapers, launchpadApps } from "~/configs";
+import { apps, wallpapers } from "~/configs";
 
 interface LaunchpadProps {
   show: boolean;
   toggleLaunchpad: (target: boolean) => void;
+  openApp: (id: string) => void;
 }
 
 const placeholderText = "Search";
 
-export default function Launchpad({ show, toggleLaunchpad }: LaunchpadProps) {
+export default function Launchpad({ show, toggleLaunchpad, openApp }: LaunchpadProps) {
   const dark = useStore((state) => state.dark);
 
   const [searchText, setSearchText] = useState("");
   const [focus, setFocus] = useState(false);
 
+  // 排除 launchpad 自身 + 非 dock app（macOS 真实行为：Launchpad 不显示自己，也不显示从 AppleMenu 打开的系统应用）
+  const list = apps.filter((app) => app.id !== "launchpad" && !app.hideFromDock);
+
   const search = () => {
-    if (searchText === "") return launchpadApps;
+    if (searchText === "") return list;
     const text = searchText.toLowerCase();
-    const list = launchpadApps.filter((item) => {
-      return (
+    return list.filter(
+      (item) =>
         item.title.toLowerCase().includes(text) || item.id.toLowerCase().includes(text)
-      );
-    });
-    return list;
+    );
   };
 
   const close = show ? "" : "opacity-0 invisible transition-opacity duration-200";
+
+  const handleClick = (e: React.MouseEvent, app: (typeof apps)[number]) => {
+    e.stopPropagation();
+    toggleLaunchpad(false);
+    if (app.link) {
+      window.open(app.link, "_blank", "noreferrer");
+    } else {
+      openApp(app.id);
+    }
+  };
 
   return (
     <div
@@ -65,11 +77,8 @@ export default function Launchpad({ show, toggleLaunchpad }: LaunchpadProps) {
           {search().map((app) => (
             <div key={`launchpad-${app.id}`} h="32 sm:36" flex="~ col">
               <a
-                className="w-14 sm:w-20 mx-auto"
-                href={app.link}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
+                className="w-14 sm:w-20 mx-auto cursor-pointer"
+                onClick={(e) => handleClick(e, app)}
               >
                 <img src={app.img} alt={app.title} title={app.title} />
               </a>

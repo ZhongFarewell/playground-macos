@@ -1,37 +1,39 @@
+import { useEffect } from "react";
+import { useBootSequence } from "~/boot";
+
 interface BootProps {
   restart: boolean;
   sleep: boolean;
   setBooting: (value: boolean | ((prevVar: boolean) => boolean)) => void;
 }
 
-const loadingInterval = 1;
 const bootingInterval = 500;
 
 export default function Boot({ restart, sleep, setBooting }: BootProps) {
-  const [loading, setLoading] = useState<boolean>(false);
-  const [percent, setPercent] = useState<number>(0);
+  const { state, start } = useBootSequence();
 
+  // 首次 boot / restart 场景：挂载即开始 boot 序列
+  // sleep 场景：不执行序列，等用户点击唤醒（内存状态还在）
   useEffect(() => {
-    if (restart && !sleep) setLoading(true);
-  }, [restart, sleep]);
+    if (!sleep) {
+      start();
+    }
+  }, [restart, sleep, start]);
 
-  useInterval(
-    () => {
-      const newPercent = percent + 0.15;
-      if (newPercent >= 100) {
-        setTimeout(() => {
-          setBooting(false);
-          setLoading(false);
-        }, bootingInterval);
-      } else setPercent(newPercent);
-    },
-    loading ? loadingInterval : null
-  );
+  // 序列完成 → 交接（延迟一点让进度条走完 100%）
+  useEffect(() => {
+    if (state.status === "done") {
+      const t = setTimeout(() => setBooting(false), bootingInterval);
+      return () => clearTimeout(t);
+    }
+  }, [state.status, setBooting]);
+
+  const loading = state.status === "running" || state.status === "done";
 
   const handleClick = () => {
     if (sleep) setBooting(false);
     else if (restart || loading) return;
-    else setLoading(true);
+    else start();
   };
 
   return (
@@ -43,9 +45,9 @@ export default function Boot({ restart, sleep, setBooting }: BootProps) {
           m="t-16 sm:t-24 x-auto"
         >
           <span
-            className="absolute top-0 bg-white h-full rounded-sm"
+            className="absolute top-0 bg-white h-full rounded-sm transition-[width] duration-100 ease-linear"
             style={{
-              width: `${percent.toString()}%`
+              width: `${state.progress.toString()}%`
             }}
           />
         </div>

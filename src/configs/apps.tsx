@@ -80,6 +80,20 @@ const apps: AppsData[] = [
     desktop: false,
     img: "img/icons/github.png",
     link: "https://github.com/ZhongFarewell/playground-macos"
+  },
+  {
+    id: "settings",
+    title: "Settings",
+    desktop: true,
+    hideFromDock: true,
+    img: "",
+    width: 780,
+    height: 560,
+    minWidth: 560,
+    minHeight: 400,
+    x: 0,
+    y: 0,
+    content: <Settings />
   }
 ];
 

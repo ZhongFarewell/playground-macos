@@ -1,4 +1,5 @@
 import { getPhotoList, photoUrl } from "~/services";
+import { addPhotoWallpaper } from "~/services/wallpaper";
 import type { PhotoItem } from "./types";
 
 export interface PhotosState {
@@ -60,12 +61,22 @@ export const usePhotosState = (): PhotosState => {
   imgLoadedRef.current = imgLoaded;
 
   const setWallpaper = useStore((s) => s.setWallpaper);
+  const userWallpapers = useStore((s) => s.userWallpapers);
+  const setUserWallpapers = useStore((s) => s.setUserWallpapers);
 
+  // 内存里维护一份 wallpaper settings，供 addPhotoWallpaper 计算 next
+  // 启动时 Desktop 已从 database 恢复 userWallpapers，这里以此为初值推导
   const handleSetWallpaper = useCallback(
     (filename: string) => {
-      setWallpaper(photoUrl(filename));
+      const url = photoUrl(filename);
+      // 立即生效：更新 store 的当前壁纸
+      setWallpaper(url);
+      // 后台推送：更新 system:wallpaper 单例（current + photos 去重）
+      const prev = { current: url, photos: userWallpapers };
+      const next = addPhotoWallpaper(prev, url);
+      setUserWallpapers(next.photos);
     },
-    [setWallpaper]
+    [setWallpaper, userWallpapers, setUserWallpapers]
   );
 
   const handleExport = useCallback((filename: string) => {

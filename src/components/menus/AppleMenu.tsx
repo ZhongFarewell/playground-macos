@@ -9,6 +9,8 @@ interface AppleMenuProps {
   btnRef: React.RefObject<HTMLDivElement>;
   /** 当前用户显示名，用于 "Log Out {name}..." 文案 */
   userName: string;
+  /** 打开 System Settings 窗口 */
+  openSettings: () => void;
 }
 
 export default function AppleMenu({
@@ -18,7 +20,8 @@ export default function AppleMenu({
   sleep,
   toggleAppleMenu,
   btnRef,
-  userName
+  userName,
+  openSettings
 }: AppleMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -30,7 +33,14 @@ export default function AppleMenu({
         <MenuItem>About This Mac</MenuItem>
       </MenuItemGroup>
       <MenuItemGroup>
-        <MenuItem>System Preferences...</MenuItem>
+        <MenuItem
+          onClick={() => {
+            openSettings();
+            toggleAppleMenu();
+          }}
+        >
+          System Settings…
+        </MenuItem>
         <MenuItem>App Store...</MenuItem>
       </MenuItemGroup>
       <MenuItemGroup>

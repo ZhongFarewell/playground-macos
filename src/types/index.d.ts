@@ -9,10 +9,10 @@ export interface MacActions {
 
 export {
   AppsData,
-  LaunchpadData,
   MusicData,
   TerminalData,
   TyporaNote,
+  TyporaNoteData,
   UserData,
   WallpaperData,
   WebsitesData,
