@@ -44,7 +44,12 @@ export default function App() {
   if (booting) {
     return (
       <>
-        <Boot restart={restart} sleep={sleep} setBooting={setBooting} />
+        <Boot
+          restart={restart}
+          sleep={sleep}
+          setBooting={setBooting}
+          setLogin={setLogin}
+        />
         <ContextMenu />
       </>
     );

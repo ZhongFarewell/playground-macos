@@ -5,6 +5,7 @@
  */
 import { initDatabase } from "~/services/database";
 import { loadWallpaperSettings } from "~/services/wallpaper";
+import { authAlign } from "~/services";
 import wallpapers from "~/configs/wallpapers";
 
 interface TaskContext {
@@ -12,36 +13,29 @@ interface TaskContext {
 }
 
 /**
- * 预加载图片：等图片下载 + 解码完成后再 resolve。
- * 进桌面时 backgroundImage 直接命中浏览器缓存，无闪烁。
- * 超时/失败静默忽略（不阻塞启动）。
+ * 预加载图片：fetch 为 blob → createObjectURL，返回 blob URL。
+ * blob URL 是内存引用，<img> 直接用不走网络，绝不流式加载。
+ * 失败返回 null（调用方 fallback 到原始 URL）。
  */
-const preloadImage = (url: string, timeoutMs = 4000): Promise<void> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const timer = setTimeout(() => {
-      resolve();
-    }, timeoutMs);
-    img.onload = () => {
-      clearTimeout(timer);
-      // decode 进一步确保解码完成（大图解码也耗时）
-      if (img.decode) {
-        img.decode().then(resolve, resolve);
-      } else {
-        resolve();
-      }
-    };
-    img.onerror = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    img.src = url;
-  });
+const preloadImage = async (url: string, timeoutMs = 8000): Promise<string | null> => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 };
 
 interface StoreActions {
   setWallpaper: (url: string | null) => void;
   setUserWallpapers: (urls: string[]) => void;
+  setUserInfo: (v: { username: string; [k: string]: unknown } | null) => void;
+  addPreloadedWallpaper: (originalUrl: string, blobUrl: string) => void;
   pushNotification: (n: {
     title: string;
     body: string;
@@ -80,19 +74,45 @@ export async function runSessionRestorePhase(
     }
 
     // 预加载当前生效的壁纸（含自定义）+ 默认 day/night（dark 切换 fallback）
-    // 全部 await：进桌面时所有可能显示的壁纸都已就绪，无流式加载
+    // fetch 为 blob → createObjectURL，<img> 用 blob URL 不走网络，绝不流式
     const preloadUrls = [currentUrl, wallpapers.day, wallpapers.night].filter(
       (u): u is string => Boolean(u)
     );
     console.log("[boot] Phase 2: preloading images", preloadUrls);
-    await Promise.all(preloadUrls.map((u) => preloadImage(u, 8000)));
+    await Promise.all(
+      preloadUrls.map(async (u) => {
+        const blobUrl = await preloadImage(u, 8000);
+        if (blobUrl) actions.addPreloadedWallpaper(u, blobUrl);
+      })
+    );
     console.log("[boot] Phase 2: preload done");
   } catch (err) {
     console.warn("[boot] Phase 2: session-restore failed (degraded)", err);
   }
 }
 
-/** Phase 3: 非阻塞检查（PAT 缺失提示）。失败只推通知。 */
+/** Phase 3: 免登校验（authAlign）。成功返回 true，失败/无 session 返回 false。 */
+export async function runAuthPhase(
+  _ctx: TaskContext,
+  actions: StoreActions
+): Promise<boolean> {
+  try {
+    console.log("[boot] Phase 3: auth check start");
+    const res = await authAlign();
+    if (res?.data && typeof res.data === "object") {
+      actions.setUserInfo(res.data as { username: string; [k: string]: unknown });
+      console.log("[boot] Phase 3: auth succeeded, user logged in");
+      return true;
+    }
+    console.log("[boot] Phase 3: no valid session, need login");
+    return false;
+  } catch (err) {
+    console.warn("[boot] Phase 3: auth check failed (need login)", err);
+    return false;
+  }
+}
+
+/** Phase 4: 非阻塞检查（PAT 缺失提示）。失败只推通知。 */
 export async function runPostChecksPhase(
   _ctx: TaskContext,
   actions: StoreActions

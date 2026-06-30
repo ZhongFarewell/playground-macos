@@ -5,12 +5,15 @@ interface BootProps {
   restart: boolean;
   sleep: boolean;
   setBooting: (value: boolean | ((prevVar: boolean) => boolean)) => void;
+  setLogin: (value: boolean | ((prevVar: boolean) => boolean)) => void;
 }
 
 const bootingInterval = 500;
 
-export default function Boot({ restart, sleep, setBooting }: BootProps) {
-  const { state, start } = useBootSequence();
+export default function Boot({ restart, sleep, setBooting, setLogin }: BootProps) {
+  const { state, start } = useBootSequence({
+    onAuthResult: (loggedIn) => setLogin(loggedIn)
+  });
 
   // 首次 boot / restart 场景：挂载即开始 boot 序列
   // sleep 场景：不执行序列，等用户点击唤醒（内存状态还在）

@@ -112,7 +112,18 @@ export default function Desktop(props: MacActions) {
     wallpaperFit: state.wallpaperFit
   }));
 
-  // 壁纸渲染走 backgroundImage（见下方 bgStyle），wallpaperUrl 不再单独使用
+  // 壁纸 URL（自定义优先，否则按深色模式取默认）
+  const wallpaperUrl = customWallpaper ?? (dark ? wallpapers.night : wallpapers.day);
+
+  // 壁纸渲染：优先用 boot 预加载的 blob URL（内存引用，不走网络，绝不流式）
+  const preloadedWallpapers = useStore((s) => s.preloadedWallpapers);
+  const wallpaperSrc = preloadedWallpapers[wallpaperUrl] ?? wallpaperUrl;
+  const [wallpaperLoaded, setWallpaperLoaded] = useState(
+    Boolean(preloadedWallpapers[wallpaperUrl])
+  );
+  useEffect(() => {
+    setWallpaperLoaded(Boolean(preloadedWallpapers[wallpaperUrl]));
+  }, [wallpaperUrl, preloadedWallpapers]);
 
   const getAppsData = (): void => {
     let showApps = {},
@@ -359,30 +370,34 @@ export default function Desktop(props: MacActions) {
     });
   };
 
-  // 按 wallpaperFit 计算背景样式（对应 macOS Wallpaper 的填充下拉）
-  const bgStyle: React.CSSProperties = {
-    backgroundImage: `url("${customWallpaper ?? (dark ? wallpapers.night : wallpapers.day)}")`,
-    filter: `brightness( ${(brightness as number) * 0.7 + 50}% )`
-  };
-  if (wallpaperFit === "stretch") {
-    bgStyle.backgroundSize = "100% 100%";
-  } else if (wallpaperFit === "center") {
-    bgStyle.backgroundSize = "auto";
-    bgStyle.backgroundRepeat = "no-repeat";
-    bgStyle.backgroundPosition = "center";
-  }
+  // object-fit 对应 wallpaperFit：cover/contain/stretch/center
+  const objectFit =
+    wallpaperFit === "contain"
+      ? "contain"
+      : wallpaperFit === "stretch"
+        ? "fill"
+        : wallpaperFit === "center"
+          ? "none"
+          : "cover";
+  const wallpaperFilter = `brightness( ${(brightness as number) * 0.7 + 50}% )`;
 
   return (
-    <div
-      className={`size-full overflow-hidden bg-center ${
-        wallpaperFit === "contain"
-          ? "bg-contain bg-no-repeat"
-          : wallpaperFit === "cover"
-            ? "bg-cover"
-            : ""
-      }`}
-      style={bgStyle}
-    >
+    <div className="size-full overflow-hidden relative bg-black">
+      {/* 壁纸层：blob URL 直接显示（内存引用不走网络）；原始 URL 等 onLoad */}
+      <img
+        src={wallpaperSrc}
+        alt=""
+        aria-hidden
+        decoding="sync"
+        onLoad={() => setWallpaperLoaded(true)}
+        className="absolute inset-0 size-full transition-opacity duration-300"
+        style={{
+          opacity: wallpaperLoaded ? 1 : 0,
+          objectFit: objectFit as React.CSSProperties["objectFit"],
+          objectPosition: "center",
+          filter: wallpaperFilter
+        }}
+      />
       {/* Top Menu Bar */}
       <TopBar
         title={state.currentTitle}

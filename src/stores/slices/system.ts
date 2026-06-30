@@ -19,6 +19,8 @@ export interface SystemSlice {
   wallpaperFit: WallpaperFit;
   /** 从 Photos 设过的壁纸 URL 列表（最新在前，持久化在 system:wallpaper） */
   userWallpapers: string[];
+  /** boot 预加载的壁纸：原始 URL → blob URL（内存引用，<img> 直接用不走网络） */
+  preloadedWallpapers: Record<string, string>;
   toggleDark: () => void;
   toggleWIFI: () => void;
   toggleBluetooth: () => void;
@@ -29,6 +31,7 @@ export interface SystemSlice {
   setWallpaper: (url: string | null) => void;
   setWallpaperFit: (fit: WallpaperFit) => void;
   setUserWallpapers: (urls: string[]) => void;
+  addPreloadedWallpaper: (originalUrl: string, blobUrl: string) => void;
 }
 
 export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
@@ -42,6 +45,7 @@ export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
   customWallpaper: null,
   wallpaperFit: "cover",
   userWallpapers: [],
+  preloadedWallpapers: {},
   toggleDark: () =>
     set((state) => {
       if (!state.dark) document.documentElement.classList.add("dark");
@@ -60,7 +64,11 @@ export const createSystemSlice: StateCreator<SystemSlice> = (set) => ({
   setBrightness: (v) => set(() => ({ brightness: v })),
   setWallpaper: (url) => set(() => ({ customWallpaper: url })),
   setWallpaperFit: (fit) => set(() => ({ wallpaperFit: fit })),
-  setUserWallpapers: (urls) => set(() => ({ userWallpapers: urls }))
+  setUserWallpapers: (urls) => set(() => ({ userWallpapers: urls })),
+  addPreloadedWallpaper: (originalUrl, blobUrl) =>
+    set((state) => ({
+      preloadedWallpapers: { ...state.preloadedWallpapers, [originalUrl]: blobUrl }
+    }))
 });
 
 /** 获取当前壁纸 URL（自定义优先，否则按深色模式取默认） */

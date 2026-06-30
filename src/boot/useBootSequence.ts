@@ -2,9 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "~/stores";
 import type { BootPhase, BootState } from "./types";
 import { PHASE_PROGRESS } from "./types";
-import { runDatabasePhase, runSessionRestorePhase, runPostChecksPhase } from "./tasks";
+import {
+  runDatabasePhase,
+  runSessionRestorePhase,
+  runAuthPhase,
+  runPostChecksPhase
+} from "./tasks";
 
-const BOOT_TIMEOUT = 8000; // 8s 超时强制完成
+const BOOT_TIMEOUT = 12000; // 12s 超时强制完成（含 auth 网络请求，放宽）
 const MIN_DISPLAY = 800; // 最小展示时间，避免闪过
 
 /** 计算阶段对应的进度目标值 */
@@ -14,14 +19,16 @@ const phaseProgress = (phase: BootPhase): number => {
   return range ? range[1] : 0;
 };
 
+interface UseBootSequenceOptions {
+  /** auth 校验结果回调：true=已登录进桌面，false=未登录进登录页 */
+  onAuthResult?: (loggedIn: boolean) => void;
+}
+
 /**
  * boot 序列编排 hook。
- * 管理 BootState，按序执行三阶段，rAF 平滑插值进度，超时保护。
- *
- * 调用方：Boot 组件在 boot/restart 场景调 start()，
- * status===done 后等 MIN_DISPLAY 再 setBooting(false)。
+ * 管理 BootState，按序执行四阶段，rAF 平滑插值进度，超时保护。
  */
-export const useBootSequence = () => {
+export const useBootSequence = (options: UseBootSequenceOptions = {}) => {
   const [state, setState] = useState<BootState>({
     phase: "idle",
     status: "idle",
@@ -38,7 +45,13 @@ export const useBootSequence = () => {
   const setBootState = useStore((s) => s.setBootState);
   const setWallpaper = useStore((s) => s.setWallpaper);
   const setUserWallpapers = useStore((s) => s.setUserWallpapers);
+  const setUserInfo = useStore((s) => s.setUserInfo);
+  const addPreloadedWallpaper = useStore((s) => s.addPreloadedWallpaper);
   const pushNotification = useStore((s) => s.pushNotification);
+
+  // onAuthResult 存 ref，避免它变化导致 start 重建
+  const onAuthResultRef = useRef(options.onAuthResult);
+  onAuthResultRef.current = options.onAuthResult;
 
   // rAF 平滑插值进度条（仅在 progress 未达目标时持续）
   useEffect(() => {
@@ -70,7 +83,13 @@ export const useBootSequence = () => {
     runningRef.current = true;
     startTimeRef.current = Date.now();
 
-    const actions = { setWallpaper, setUserWallpapers, pushNotification };
+    const actions = {
+      setWallpaper,
+      setUserWallpapers,
+      setUserInfo,
+      addPreloadedWallpaper,
+      pushNotification
+    };
 
     const setPhase = (phase: BootPhase) => {
       targetProgress.current = phaseProgress(phase);
@@ -81,14 +100,22 @@ export const useBootSequence = () => {
     setState({ phase: "database", status: "running", progress: 0, error: null });
     targetProgress.current = phaseProgress("database");
 
-    // Phase 1: database (0→60%)
+    // Phase 1: database (0→40%)
     await runDatabasePhase({ signal: new AbortController().signal });
 
-    // Phase 2: session-restore (60→90%)
+    // Phase 2: session-restore (40→75%)
     setPhase("session-restore");
     await runSessionRestorePhase({ signal: new AbortController().signal }, actions);
 
-    // Phase 3: post-checks (90→100%)
+    // Phase 3: auth (75→90%)
+    setPhase("auth");
+    const loggedIn = await runAuthPhase(
+      { signal: new AbortController().signal },
+      actions
+    );
+    onAuthResultRef.current?.(loggedIn);
+
+    // Phase 4: post-checks (90→100%)
     setPhase("post-checks");
     await runPostChecksPhase({ signal: new AbortController().signal }, actions);
 
@@ -100,7 +127,13 @@ export const useBootSequence = () => {
 
     setState({ phase: "done", status: "done", progress: 100, error: null });
     runningRef.current = false;
-  }, [setWallpaper, setUserWallpapers, pushNotification]);
+  }, [
+    setWallpaper,
+    setUserWallpapers,
+    setUserInfo,
+    addPreloadedWallpaper,
+    pushNotification
+  ]);
 
   // 超时保护：8s 强制完成（start 内部卡住时兜底）
   useEffect(() => {

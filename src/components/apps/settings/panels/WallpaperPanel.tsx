@@ -36,6 +36,7 @@ const WallpaperPanel = React.memo(function WallpaperPanel() {
   const userWallpapers = useStore((s) => s.userWallpapers);
   const setWallpaper = useStore((s) => s.setWallpaper);
   const setWallpaperFit = useStore((s) => s.setWallpaperFit);
+  const addPreloadedWallpaper = useStore((s) => s.addPreloadedWallpaper);
 
   // 用户自定义图片（仅当前会话，不持久化）
   const [userPictures, setUserPictures] = useState<UserPicture[]>([]);
@@ -55,17 +56,20 @@ const WallpaperPanel = React.memo(function WallpaperPanel() {
       setCurrentWallpaper({ current: customWallpaper, photos: userWallpapers }, null);
       return;
     }
-    const img = new Image();
-    img.onload = () => {
-      setWallpaper(url);
-      setCurrentWallpaper({ current: customWallpaper, photos: userWallpapers }, url);
-    };
-    img.onerror = () => {
-      // 加载失败仍切换（显示 broken image，但状态一致）
-      setWallpaper(url);
-      setCurrentWallpaper({ current: customWallpaper, photos: userWallpapers }, url);
-    };
-    img.src = url;
+    // fetch 为 blob → createObjectURL，<img> 用 blob URL 不走网络
+    fetch(url)
+      .then((res) => res.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        addPreloadedWallpaper(url, blobUrl);
+        setWallpaper(url);
+        setCurrentWallpaper({ current: customWallpaper, photos: userWallpapers }, url);
+      })
+      .catch(() => {
+        // 加载失败仍切换（用原始 URL，可能流式但状态一致）
+        setWallpaper(url);
+        setCurrentWallpaper({ current: customWallpaper, photos: userWallpapers }, url);
+      });
   };
 
   const handleAddPicture = (e: React.ChangeEvent<HTMLInputElement>) => {
