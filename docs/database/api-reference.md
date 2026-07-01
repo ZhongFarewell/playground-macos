@@ -95,6 +95,32 @@ const ok = await removeBlob(blobRef, "commit msg");
 
 **注意**：blob 写入是同步 await，不走 debounce 队列。失败由调用方处理。
 
+## 二进制 Blob（图片/音频/视频等）
+
+文本 blob（`readBlob`/`writeBlob`）走 UTF-8 字符串编解码，会损坏二进制文件。处理任意类型文件时用 bytes 版本：
+
+```ts
+// 读原始 bytes（二进制安全，不经过 TextDecoder）
+const bytes = await readBlobBytes(id, "mp3");
+
+// 写原始 bytes（二进制安全，不经过 TextEncoder）
+const blobRef = await writeBlobBytes(id, "mp3", bytes, "commit msg", existingSha);
+```
+
+**大文件 fallback**：GitHub Contents API 对 >1MB 文件返回 `content` 为空，只给 `download_url`。`readBlobBytes` 内部自动 fallback：优先用 `content`（base64 解码），为空时走 `download_url` 拉 raw bytes。
+
+## raw 直链
+
+```ts
+import { rawUrl } from "~/services/database";
+
+// 拼公开仓库的 raw 文件直链，浏览器可直接 window.open 流式渲染
+const url = rawUrl("blobs/01JXY....mp3");
+// → https://raw.githubusercontent.com/ZhongFarewell/macos-database/main/blobs/01JXY....mp3
+```
+
+**用途**：Finder 双击文件在新标签页打开预览。公开仓库 raw 直链可匿名访问，无需 PAT。浏览器按 URL 扩展名判断 Content-Type，图片/PDF/音视频可流式渲染（边下边显示）。
+
 ## 关键时刻
 
 ### 立即刷盘

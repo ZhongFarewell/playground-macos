@@ -1,9 +1,14 @@
 import { useMotionValue } from "framer-motion";
 import { apps } from "~/configs";
+import DockThumbnail from "./DockThumbnail";
+import DockTrash from "./DockTrash";
 
 interface DockProps {
   open: (id: string) => void;
   showApps: {
+    [key: string]: boolean;
+  };
+  minApps: {
     [key: string]: boolean;
   };
   showLaunchpad: boolean;
@@ -14,6 +19,7 @@ interface DockProps {
 export default function Dock({
   open,
   showApps,
+  minApps,
   showLaunchpad,
   toggleLaunchpad,
   hide
@@ -32,6 +38,12 @@ export default function Dock({
   };
 
   const mouseX = useMotionValue<number | null>(null);
+
+  // 最小化窗口列表：从 apps 中筛出 desktop 且 minApps[id] 为 true 的项
+  // 排除 hideFromDock（settings/trash 等）：这些 app 不在 Dock 显示，最小化时无缩略图
+  const minimizedApps = apps.filter(
+    (app) => app.desktop && !app.hideFromDock && minApps[app.id]
+  );
 
   return (
     <div
@@ -65,6 +77,47 @@ export default function Dock({
               dockMag={dockMag}
             />
           ))}
+
+        {/* 分隔线：macOS Dock 在应用图标与文件/Trash 之间的竖线，始终存在 */}
+        <li
+          className="flex items-center justify-center self-stretch"
+          style={{ width: "2px", margin: "0 4px" }}
+          aria-hidden
+        >
+          <div
+            className="bg-gray-500/60 dark:bg-gray-200/60"
+            style={{ width: "1px", height: `${(dockSize * 0.7) / 16}rem` }}
+          />
+        </li>
+
+        {/* 最小化窗口缩略图区（macOS 经典行为：缩略图显示在分隔线右侧） */}
+        {minimizedApps.map((app) => {
+          // 窗口原始比例：宽/高。无 width/height 的 app（如 Terminal）用默认 4/3
+          const w = app.width ?? 640;
+          const h = app.height ?? 480;
+          return (
+            <DockThumbnail
+              key={`dock-thumb-${app.id}`}
+              id={app.id}
+              title={app.title}
+              img={app.img}
+              mouseX={mouseX}
+              openApp={openApp}
+              dockSize={dockSize}
+              dockMag={dockMag}
+              aspectRatio={w / h}
+            />
+          );
+        })}
+
+        {/* Trash：Dock 最右侧固定项 */}
+        <DockTrash
+          mouseX={mouseX}
+          openApp={openApp}
+          dockSize={dockSize}
+          dockMag={dockMag}
+          isOpen={showApps["trash"]}
+        />
       </ul>
     </div>
   );

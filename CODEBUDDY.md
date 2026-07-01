@@ -126,7 +126,9 @@ Rules:
 
 ### Built-in apps (`src/components/apps/`)
 
-`Typora` (Milkdown WYSIWYG markdown editor with GitHub-persisted notes — see "Typora app" below), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
+`Typora` (Milkdown WYSIWYG markdown editor with GitHub-persisted notes — see "Typora app" below), `Finder` (file manager with GitHub-persisted entries — see "Finder app" below), `Safari` (iframe browser over `src/configs/websites.tsx`), `VSCode` (opens `vscode://` URL), `Terminal` (command loop over `src/configs/terminal.tsx`), `FaceTime` (webcam capture via `react-webcam`, stores snapshots in the `user` store), `Photos` (photo gallery consuming backend `/resources/memory/image` API).
+
+**Finder app** (`src/components/apps/finder/`): File manager backed by the `macos-database` GitHub repo. Folder structure: `Finder.tsx` (main, auto-imported) + `FinderSidebar`/`FinderToolbar`/`FinderFileList`/`FinderFileRow`/`FinderPathBar`/`EmptyTrashDialog` + `useFinderState.ts` + `menus.ts` + `types.ts`. Files/folders are unified as `finder:entry` records (id = ULID, collection type): meta (name/parentId/kind/blob-ref/ext/size/trashed/...) in `records/{id}.json`, file content in `blobs/{id}.{ext}`. **Binary-safe blob path**: file content uses `Uint8Array` via `readBlobBytes`/`writeBlobBytes` (not `readBlob`/`writeBlob` — those are UTF-8 text only, used by Typora). Service layer in `src/services/finder.ts` wraps the database API. Drag-and-drop any file type into the window to upload (uses `file.arrayBuffer()`, binary-safe). Double-click a file opens it in a new browser tab via `rawUrl` (raw.githubusercontent.com direct link, streamed by the browser). Trash is soft-delete (`trashed:true` + `originalParentId` preserved); Empty Trash physically deletes records + blobs. Two app entries in `apps.tsx`: `id:"finder"` (Home view) + `id:"trash"` (`<Finder initialTrash />`). See `docs/apps/finder.md` for full architecture.
 
 **Typora app** (`src/components/apps/typora/`): WYSIWYG markdown editor backed by the `macos-database` GitHub repo (via the `src/services/database/` persistence system — see "Database 持久化系统" below). Folder structure follows the app code organization rule: `Typora.tsx` (main, auto-imported) + `MilkdownEditor.tsx` + `useTyporaState.ts` (state/handlers) + `menus.ts` + dialog components (`TyporaOpenPanel`/`TyporaSaveDialog`/`TyporaPatDialog`/`TyporaRenameDialog`). Notes are stored as `typora:note` records (id = ULID, collection type): meta (title/excerpt/blob-ref) in `records/{id}.json`, content in `blobs/{id}.md`. Service layer in `src/services/typora.ts` wraps the database API (`queryByType`/`insertRecord`/`updateRecord`/`readBlob`/`writeBlob`). PAT stored in `localStorage` key `database_github_pat` (auto-migrated from the old `typora_github_pat` key on module load). No in-window toolbar — all operations (New ⌘N / Open… ⌘O / Save ⌘S / Rename… / Export…) are exposed via the macOS-style top menu bar through `useAppMenus("typora", ...)` (see `menus.ts`). Save menu triggers a submenu choice (Save to GitHub / Save to Local download). Drag-and-drop `.md`/`.markdown`/`.txt` files into the window to open them. Deviates from real Typora in: (1) no independent window per document (browser limitation), (2) custom Open/Save modals replace native system dialogs (browser limitation), (3) saves to GitHub instead of local filesystem. Milkdown `markdownUpdated` callback syncs content to Zustand `typoraMd` for cross-component access.
 
@@ -184,11 +186,11 @@ return <img ref={photoRef as any} src={url} />;
 4. 写队列 debounce 2s + 串行 flush
 5. 大文本走 `blobs/`，不进 record
 
-**对外 API 入口**：`~/services/database`（业务代码只 import 这一个，不直接 import 内部模块）。核心 API：`initDatabase` / `getSingleton` / `writeSingleton` / `queryByType` / `insertRecord` / `updateRecord` / `deleteRecord` / `readBlob` / `writeBlob` / `flushAll`。详见 `docs/database/api-reference.md`。
+**对外 API 入口**：`~/services/database`（业务代码只 import 这一个，不直接 import 内部模块）。核心 API：`initDatabase` / `getSingleton` / `writeSingleton` / `queryByType` / `insertRecord` / `updateRecord` / `deleteRecord` / `readBlob` / `writeBlob` / `readBlobBytes` / `writeBlobBytes` / `rawUrl` / `flushAll`。详见 `docs/database/api-reference.md`。
 
-**type 命名约定**：`{app}:{feature}` 格式（如 `browser:history`、`system:settings`、`typora:note`）。单例 id === type，集合 id = ULID。详见 `docs/database/type-naming-convention.md`。
+**type 命名约定**：`{app}:{feature}` 格式（如 `browser:history`、`system:settings`、`typora:note`、`finder:entry`）。单例 id === type，集合 id = ULID。详见 `docs/database/type-naming-convention.md`。
 
-**适用边界**：单用户 portfolio 项目，< 1 万条 record。不适用多用户协作、高频写、大二进制存储（图片走 MinIO）。未来如需迁移到真数据库，只换 `github.ts` 通信层。
+**适用边界**：单用户 portfolio 项目，< 1 万条 record。不适用多用户协作、高频写、超大二进制存储（图片走 MinIO）。Finder 的 `finder:entry` 支持任意类型文件（mp3/pdf 等），但 GitHub 有 100MB 单文件上限，超大文件仍应走 MinIO。未来如需迁移到真数据库，只换 `github.ts` 通信层。
 
 ### Styling — UnoCSS (`unocss.config.ts`)
 
@@ -197,6 +199,8 @@ Uses `presetUno`, `presetAttributify` (attribute-based classes like `<div text="
 Notable custom shortcuts: `flex-center`, `hstack`, `vstack`, `no-outline`, `window-btn`, `menu-box`, `cc-grid` (control-center tile), `cc-btn`, `battery-level`.
 
 Theme-aware color shortcuts `text-c-*`, `bg-c-*`, `border-c-*` auto-generate a `dark:` variant — `colorAttr` in the config maps a light gray shade to its dark-mode counterpart (see the `colorReg`/`colorAttr` helpers). Use these `*-c-*` shortcuts for any color that needs to respond to dark mode, rather than writing explicit `dark:` variants.
+
+**Safelist for dynamic icon classes**: UnoCSS scans source for literal class names, but icons referenced only as object values (like `FILE_ICON_MAP` in `src/components/apps/finder/types.ts`) won't be collected. The `safelist` array in `unocss.config.ts` explicitly lists these. **When adding new file-type icons to `FILE_ICON_MAP`, sync the safelist** or the icon won't render after build.
 
 Dark mode is toggled by adding/removing the `dark` class on `<html>` (done in `system.ts` `toggleDark`), so UnoCSS `dark:` variants work out of the box.
 

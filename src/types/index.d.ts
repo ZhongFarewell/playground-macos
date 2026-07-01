@@ -9,6 +9,9 @@ export interface MacActions {
 
 export {
   AppsData,
+  FinderEntry,
+  FinderEntryData,
+  EntryKind,
   MusicData,
   TerminalData,
   TyporaNote,

@@ -218,26 +218,51 @@ export default function Desktop(props: MacActions) {
   const minimizeApp = (id: string): void => {
     setWindowPosition(id);
 
-    // 非 dock app（如 Settings）：直接最小化，不做 dock 图标动画
-    let dockEl = document.querySelector(`#dock-${id}`) as HTMLElement | null;
-    if (!dockEl) {
+    const windowEl = document.querySelector(`#window-${id}`) as HTMLElement | null;
+    if (!windowEl) {
       setAppMin(id, true);
       return;
     }
-    const dockAppRect = dockEl.getBoundingClientRect();
 
-    dockEl = document.querySelector(`#window-${id}`) as HTMLElement;
-    // const appRect = r.getBoundingClientRect();
-    const posY = window.innerHeight - dockEl.offsetHeight / 2 - minMarginY;
-    // "+ window.innerWidth" because of the boundary for windows
-    const posX = window.innerWidth + dockAppRect.x - dockEl.offsetWidth / 2 + 25;
+    // 非 dock app（如 Settings，hideFromDock）：直接最小化，不做缩略图飞行动画
+    const appConfig = apps.find((a) => a.id === id);
+    if (!appConfig || appConfig.hideFromDock) {
+      setAppMin(id, true);
+      return;
+    }
 
-    // translate the window to that position
-    dockEl.style.transform = `translate(${posX}px, ${posY}px) scale(0.2)`;
-    dockEl.style.transition = "ease-out 0.3s";
+    // 窗口原始高度 → scale 比例（缩略图高度对齐 dockSize，等比缩放）
+    const winH = windowEl.offsetHeight;
+    const scale = dockSize / winH;
 
-    // add it to the minimized app list
+    // 先 setAppMin(true) 触发 Dock 渲染缩略图占位（#dock-thumb-{id}）
     setAppMin(id, true);
+
+    // 双 rAF 确保缩略图挂载后再读坐标，执行 transform 飞行动画
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const thumbEl = document.querySelector(`#dock-thumb-${id}`) as HTMLElement | null;
+        if (!thumbEl) return;
+
+        const thumbRect = thumbEl.getBoundingClientRect();
+        // posY：窗口中心对齐缩略图中心（考虑 boundary 的 minMarginY 偏移）
+        const posY =
+          window.innerHeight -
+          thumbRect.bottom +
+          thumbRect.height / 2 -
+          windowEl.offsetHeight / 2 -
+          minMarginY;
+        // posX：+ window.innerWidth 是 boundary 偏移；让窗口中心对齐缩略图中心
+        const posX =
+          window.innerWidth +
+          thumbRect.x +
+          thumbRect.width / 2 -
+          windowEl.offsetWidth / 2;
+
+        windowEl.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+        windowEl.style.transition = "ease-out 0.3s";
+      });
+    });
   };
 
   // AppWindow 关闭前回传状态，记录到 windowStates + localStorage
@@ -442,6 +467,7 @@ export default function Desktop(props: MacActions) {
       <Dock
         open={openApp}
         showApps={state.showApps}
+        minApps={state.minApps}
         showLaunchpad={state.showLaunchpad}
         toggleLaunchpad={toggleLaunchpad}
         hide={state.hideDockAndTopbar}

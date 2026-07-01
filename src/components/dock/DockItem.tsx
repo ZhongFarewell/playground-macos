@@ -10,11 +10,13 @@ import {
 
 // Hover effect is adopted from https://github.com/PuruVJ/macos-web/blob/main/src/components/dock/DockItem.tsx
 
-const useDockHoverAnimation = (
+export const useDockHoverAnimation = <T extends HTMLElement>(
   mouseX: MotionValue,
-  ref: React.RefObject<HTMLImageElement>,
+  ref: React.RefObject<T>,
   dockSize: number,
-  dockMag: number
+  dockMag: number,
+  // 基础尺寸：DockItem 传 dockSize（正方形图标），DockThumbnail 传按窗口比例算的宽度
+  baseSize: number = dockSize
 ) => {
   const distanceLimit = dockSize * 6;
   const distanceInput = [
@@ -27,13 +29,13 @@ const useDockHoverAnimation = (
     distanceLimit
   ];
   const widthOutput = [
-    dockSize,
-    dockSize * (dockMag * 0.55),
-    dockSize * (dockMag * 0.75),
-    dockSize * dockMag,
-    dockSize * (dockMag * 0.75),
-    dockSize * (dockMag * 0.55),
-    dockSize
+    baseSize,
+    baseSize * (dockMag * 0.55),
+    baseSize * (dockMag * 0.75),
+    baseSize * dockMag,
+    baseSize * (dockMag * 0.75),
+    baseSize * (dockMag * 0.55),
+    baseSize
   ];
   const beyondTheDistanceLimit = distanceLimit + 1;
 

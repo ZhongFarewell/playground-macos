@@ -12,6 +12,10 @@ const REPO_OWNER = "ZhongFarewell";
 const REPO_NAME = "macos-database";
 const REPO_BRANCH = "main";
 const API_BASE = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`;
+const RAW_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}`;
+
+/** 拼接 raw 文件直链（公开仓库可直接访问，浏览器流式渲染） */
+export const rawUrl = (path: string): string => `${RAW_BASE}/${path}`;
 
 /** PAT 在 localStorage 的 key（与原 typora 共用，PAT 范围限定到本仓库） */
 const PAT_KEY = "database_github_pat";
@@ -60,11 +64,34 @@ export const fromBase64 = (b64: string): string => {
   return new TextDecoder().decode(bytes);
 };
 
+/** 任意 bytes → base64（用于二进制文件，不经过 TextEncoder，避免损坏） */
+export const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  const chunk = 0x8000; // 避免调用栈溢出，分块拼接
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const slice = bytes.subarray(i, i + chunk);
+    for (let j = 0; j < slice.length; j++) {
+      binary += String.fromCharCode(slice[j]);
+    }
+  }
+  return btoa(binary);
+};
+
+/** base64 → 任意 bytes（用于二进制文件，不经过 TextDecoder） */
+export const base64ToBytes = (b64: string): Uint8Array => {
+  const binary = atob(b64.replace(/\n/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
 export interface GithubFile {
-  /** 文件内容（base64） */
+  /** 文件内容（base64）。>1MB 文件此字段为空，需用 downloadUrl 拉 raw。 */
   content?: string;
   /** 文件 sha，更新/删除时需要 */
   sha?: string;
+  /** raw 文件直链（content 为空时用此 URL 拉原始 bytes） */
+  downloadUrl?: string;
 }
 
 /**
@@ -79,7 +106,7 @@ export const getFile = async (path: string): Promise<GithubFile | null> => {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return { content: data.content, sha: data.sha };
+    return { content: data.content, sha: data.sha, downloadUrl: data.download_url };
   } catch {
     return null;
   }
@@ -247,6 +274,29 @@ export const getBlob = async (ref: BlobRef | string): Promise<string | null> => 
 };
 
 /**
+ * 读取 blob 文件的原始 bytes（二进制安全，不经过 TextDecoder）。
+ * 用于图片/音频/视频等非文本文件。
+ */
+export const getBlobBytes = async (ref: BlobRef | string): Promise<Uint8Array | null> => {
+  const path = typeof ref === "string" ? ref : ref.file;
+  const file = await getFile(path);
+  if (file?.content) {
+    return base64ToBytes(file.content);
+  }
+  // content 为空（文件 >1MB）：用 download_url 拉 raw bytes
+  if (file?.downloadUrl) {
+    try {
+      const res = await fetch(file.downloadUrl);
+      if (!res.ok) return null;
+      return new Uint8Array(await res.arrayBuffer());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+/**
  * 写入 blob 文件。
  * 返回新 sha，调用方需更新 record 里的 BlobRef.sha。
  */
@@ -256,6 +306,49 @@ export const putBlob = async (
   message: string,
   sha?: string
 ): Promise<PutFileResult> => putFile(path, content, message, sha);
+
+/**
+ * 写入 blob 文件的原始 bytes（二进制安全，不经过 TextEncoder）。
+ * 用于图片/音频/视频等非文本文件。返回新 sha。
+ */
+export const putBlobBytes = async (
+  path: string,
+  bytes: Uint8Array,
+  message: string,
+  sha?: string
+): Promise<PutFileResult> => {
+  const pat = getPat();
+  if (!pat) return { ok: false, error: "no-pat" };
+
+  const body: Record<string, unknown> = {
+    message,
+    content: bytesToBase64(bytes),
+    branch: REPO_BRANCH
+  };
+  if (sha) body.sha = sha;
+
+  try {
+    const res = await fetch(`${API_BASE}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        ...authHeaders(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return { ok: true, sha: data.content?.sha };
+    }
+    if (res.status === 409 || res.status === 422) {
+      return { ok: false, error: "sha-conflict" };
+    }
+    return { ok: false, error: "unknown" };
+  } catch {
+    return { ok: false, error: "network" };
+  }
+};
 
 /** 删除 blob 文件 */
 export const deleteBlob = async (

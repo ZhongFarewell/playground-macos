@@ -60,6 +60,29 @@ export default defineConfig({
     ["battery-level", "absolute rounded-[1px] h-2 top-1/2 -mt-1 ml-0.5 left-0"]
   ],
   rules: [["cc-grid-shadow", { "box-shadow": "0px 1px 5px 0px rgba(0, 0, 0, 0.3)" }]],
+  // 动态拼接的图标 class（FILE_ICON_MAP 等对象字面量里的值）UnoCSS 扫描器收集不到，
+  // 需显式 safelist。新增文件类型图标时同步更新此处。
+  safelist: [
+    "i-ri:folder-fill",
+    "i-ri:file-line",
+    "i-ri:loader-4-line",
+    "i-ri:markdown-line",
+    "i-ri:file-text-line",
+    "i-ri:braces-line",
+    "i-ri:file-paper-line",
+    "i-ri:image-line",
+    "i-ri:music-line",
+    "i-ri:film-line",
+    "i-ri:file-pdf-line",
+    "i-ri:file-word-line",
+    "i-ri:file-excel-line",
+    "i-ri:file-ppt-line",
+    "i-ri:javascript-line",
+    "i-ri:file-code-line",
+    "i-ri:html5-line",
+    "i-ri:css3-line",
+    "i-ri:file-zip-line"
+  ],
   presets: [
     presetUno(),
     presetAttributify(),

@@ -29,7 +29,14 @@ import {
   writeManifestCache
 } from "./cache";
 import { enqueueWrite, enqueueDelete, flushNow, onQueueStatus } from "./queue";
-import { getBlob, putBlob, deleteBlob } from "./github";
+import {
+  getBlob,
+  putBlob,
+  deleteBlob,
+  getFileSha,
+  getBlobBytes,
+  putBlobBytes
+} from "./github";
 import { upsertManifestEntry, removeManifestEntry } from "./manifest";
 import type {
   DatabaseRecord,
@@ -300,9 +307,23 @@ export const writeBlob = async (
   existingSha?: string
 ): Promise<BlobRef | null> => {
   const path = blobFilePath(id, ext);
-  const result = await putBlob(path, content, message, existingSha);
-  if (!result.ok) return null;
-  return { file: path, sha: result.sha };
+  let sha = existingSha;
+  // 最多重试 3 次：409 sha 冲突时拉远端 sha 重试
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await putBlob(path, content, message, sha);
+    if (result.ok) {
+      return { file: path, sha: result.sha };
+    }
+    if (result.error === "sha-conflict") {
+      // 文件已存在但本地 sha 过期/缺失，拉远端最新 sha 重试
+      sha = await getFileSha(path);
+      continue;
+    }
+    // no-pat / network / unknown：不重试
+    return null;
+  }
+  console.error("[database] writeBlob sha-conflict retry exhausted:", path);
+  return null;
 };
 
 /**
@@ -311,6 +332,48 @@ export const writeBlob = async (
 export const removeBlob = async (ref: BlobRef, message: string): Promise<boolean> => {
   const result = await deleteBlob(ref, message);
   return result.ok;
+};
+
+// ── 二进制 blob（ Finder 任意类型文件用） ─────────────────────
+
+/**
+ * 读取 blob 的原始 bytes（二进制安全，不经过 TextDecoder）。
+ * 用于图片/音频/视频等非文本文件。文本文件请用 readBlob。
+ */
+export const readBlobBytes = async (
+  id: RecordId,
+  ext: string
+): Promise<Uint8Array | null> => {
+  return getBlobBytes(blobFilePath(id, ext));
+};
+
+/**
+ * 写入 blob 的原始 bytes（二进制安全，不经过 TextEncoder）。
+ * 用于图片/音频/视频等非文本文件。文本文件请用 writeBlob。
+ * 返回 BlobRef（含 file 和 sha），调用方需把 BlobRef 存到 record.data 里。
+ */
+export const writeBlobBytes = async (
+  id: RecordId,
+  ext: string,
+  bytes: Uint8Array,
+  message: string,
+  existingSha?: string
+): Promise<BlobRef | null> => {
+  const path = blobFilePath(id, ext);
+  let sha = existingSha;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await putBlobBytes(path, bytes, message, sha);
+    if (result.ok) {
+      return { file: path, sha: result.sha };
+    }
+    if (result.error === "sha-conflict") {
+      sha = await getFileSha(path);
+      continue;
+    }
+    return null;
+  }
+  console.error("[database] writeBlobBytes sha-conflict retry exhausted:", path);
+  return null;
 };
 
 // ── 关键时刻 flush ──────────────────────────────────────────
@@ -326,7 +389,7 @@ export { hasPending } from "./queue";
 
 // ── PAT 管理（与原 typora.ts 共用） ──────────────────────────
 
-export { getPat, setPat, clearPat, hasPat } from "./github";
+export { getPat, setPat, clearPat, hasPat, rawUrl } from "./github";
 
 // ── Manifest 直查（高级 API，慎用） ──────────────────────────
 

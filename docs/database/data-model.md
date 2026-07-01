@@ -65,7 +65,7 @@ interface ManifestEntry {
 - 查询时只拉 manifest（本地缓存优先），按需再拉具体 record 文件
 - 单用户场景并发极低，sha 重试足够兜底
 
-## 4. Blob — 大文本
+## 4. Blob — 大文本 / 二进制
 
 ```ts
 interface BlobRef {
@@ -74,13 +74,21 @@ interface BlobRef {
 }
 ```
 
-**文件位置**：`blobs/{id}.{ext}`（如 `blobs/01JXY....md`）
+**文件位置**：`blobs/{id}.{ext}`（如 `blobs/01JXY....md`、`blobs/01JXY....mp3`）
 
 **关键规则**：
 - 大文本（笔记正文、长文档）走 blob，不进 record
+- 二进制文件（图片/音频/视频等）也走 blob，用独立的 bytes API（`readBlobBytes`/`writeBlobBytes`），不经 TextEncoder/TextDecoder
 - record.data 里只存 `BlobRef`（路径 + sha 引用）
 - blob 不进 manifest（manifest 只索引 record）
 - 改 blob 不影响 record 的 sha，反之亦然
+
+**文本 vs 二进制**：
+- 文本 blob：`readBlob`/`writeBlob`，content 是 UTF-8 字符串（Typora 笔记正文用）
+- 二进制 blob：`readBlobBytes`/`writeBlobBytes`，content 是 `Uint8Array`（Finder 任意类型文件用）
+- 两套 API 共享同一套 `blobs/{id}.{ext}` 存储和 sha 乐观锁机制，只是编解码路径不同
+
+**大文件 fallback**：GitHub Contents API 对 >1MB 文件返回 `content` 为空。`readBlobBytes` 在 `content` 为空时自动用响应里的 `download_url` 拉 raw bytes。写大文件不受影响（PUT 不受大小限制，但有 100MB 上限）。
 
 **为什么不进 record**：
 - record 文件要保持小（查询快、PUT 便宜）

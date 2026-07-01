@@ -14,15 +14,17 @@
 
 | type | 形态 | data 结构 | 说明 |
 |------|------|----------|------|
-| `system:settings` | 单例 | `{ dark, volume, brightness, wifi, bluetooth }` | 系统偏好 |
-| `system:wallpaper` | 单例 | `{ url }` | 自定义壁纸 |
+| `system:settings` | 单例 | `{ dark, volume, brightness, wifi, bluetooth }` | 系统偏好（规划中，system slice 尚未接入） |
+| `system:wallpaper` | 单例 | `{ current, photos }` | 壁纸设置（详见 [apps/settings.md](../apps/settings.md)） |
+| `user:profile` | 单例 | `{ name, autograph, intr, gender, wechat, QQ }` | Apple ID 账户信息（详见 [apps/settings.md](../apps/settings.md)） |
 | `desktop:window-state` | 单例 | `{ apps: [{id, x, y, w, h, z}], maxZ }` | 桌面窗口状态 |
 | `desktop:dock-config` | 单例 | `{ size, magnification }` | Dock 配置 |
 | `browser:history` | 集合 | `{ url, title, visitedAt, favicon }` | 浏览历史 |
-| `browser:bookmark` | 集合 | `{ url, title, folder }` | 书签 |
+| `browser:bookmark` | 集合 | `{ title, link, img?, inner?, section, order }` | 书签（详见 [apps/safari.md](../apps/safari.md)） |
 | `browser:tab` | 集合 | `{ url, title, active }` | 打开的标签页 |
-| `typora:note` | 集合 | `{ title, excerpt, blob: BlobRef }` | 笔记（正文走 blob） |
+| `typora:note` | 集合 | `{ title, excerpt, blob: BlobRef }` | 笔记（正文走 blob，详见 [apps/typora.md](../apps/typora.md)） |
 | `facetime:snapshot` | 集合 | `{ url }` | 快照（图片走 MinIO） |
+| `finder:entry` | 集合 | `{ name, parentId, kind, blob?, ext?, size?, uploading?, trashed?, trashedAt?, originalParentId? }` | 文件/文件夹统一条目（内容走 GitHub blob，详见 [apps/finder.md](../apps/finder.md)） |
 
 ## 单例 vs 集合判定规则
 

@@ -1,4 +1,5 @@
 export { AppsData } from "./apps";
+export { FinderEntry, FinderEntryData, EntryKind } from "./finder";
 export { MusicData } from "./music";
 export { TerminalData } from "./terminal";
 export { TyporaNote, TyporaNoteData } from "./typora";

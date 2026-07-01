@@ -173,8 +173,10 @@ const Window = (props: WindowProps) => {
   }, [winWidth, winHeight]);
 
   const round = props.max ? "rounded-none" : "rounded-lg";
+  // 最小化时淡出 + 禁用交互，但不用 invisible：transform 飞行动画期间需要保持可见。
+  // pointer-events-none 避免最小化后的窗口挡住 Dock 缩略图的点击。
   const minimized = props.min
-    ? "opacity-0 invisible transition-opacity duration-300"
+    ? "opacity-0 pointer-events-none transition-opacity duration-300"
     : "";
   const border = props.max ? "" : "border border-gray-500/30";
   const width = props.max ? winWidth : state.width;

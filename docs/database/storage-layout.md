@@ -120,7 +120,7 @@ blobFilePath(id, ext) → `blobs/${id}.${ext}`
 
 ## 重要约束
 
-- **没有二进制文件**：图片/视频走 MinIO（已有 `blogSourceMinio` 基础设施），不走 GitHub
-- **全是文本文件**：JSON 或纯文本，便于 GitHub web 界面 diff 和回滚
+- **大二进制文件不存 GitHub**：图片/视频走 MinIO（已有 `blogSourceMinio` 基础设施）。Finder 的 `finder:entry` 虽支持任意类型文件（mp3/pdf 等），但 GitHub 有 100MB 单文件上限，超大文件仍应走 MinIO
+- **blob 文件格式**：JSON record 用 `.json`，文本 blob 用对应扩展名（`.md`/`.txt`），二进制 blob 用原始扩展名（`.mp3`/`.png`）。二进制 blob 在 GitHub web 界面无法 diff，但可正常存储和访问
 - **`{type}` 里的 `:` 不会出现在文件名**：单例 record 文件名虽然包含 type，但 GitHub 文件名允许 `:`，无问题
 - **ULID 时间序**：集合 record 按文件名排序 = 按创建时间排序

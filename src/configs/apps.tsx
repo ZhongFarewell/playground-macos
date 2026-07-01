@@ -3,6 +3,19 @@ import type { AppsData } from "~/types";
 
 const apps: AppsData[] = [
   {
+    id: "finder",
+    title: "Finder",
+    desktop: true,
+    width: 800,
+    height: 520,
+    minWidth: 480,
+    minHeight: 320,
+    x: -80,
+    y: -20,
+    img: "img/icons/finder.png",
+    content: <Finder />
+  },
+  {
     id: "launchpad",
     title: "Launchpad",
     desktop: false,
@@ -86,7 +99,7 @@ const apps: AppsData[] = [
     title: "Settings",
     desktop: true,
     hideFromDock: true,
-    img: "",
+    img: "img/icons/settings.png",
     width: 780,
     height: 560,
     minWidth: 560,
@@ -94,6 +107,22 @@ const apps: AppsData[] = [
     x: 0,
     y: 0,
     content: <Settings />
+  },
+  {
+    id: "trash",
+    title: "Trash",
+    desktop: true,
+    // hideFromDock: true —— 避免被 Dock 左侧 apps.map 渲染；
+    // Trash 由 Dock 在分隔线右侧单独渲染（macOS 固定行为）
+    hideFromDock: true,
+    img: "",
+    width: 800,
+    height: 520,
+    minWidth: 480,
+    minHeight: 320,
+    x: 0,
+    y: 0,
+    content: <Finder initialTrash />
   }
 ];
 
